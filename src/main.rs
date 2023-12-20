@@ -1,6 +1,8 @@
 use rustyline::error::ReadlineError;
 use rustyline::{DefaultEditor, Result};
 use std::os::raw::c_char;
+mod cpu;
+/*
 extern "C" {
     pub fn ExecuteInsn() -> u32;
 
@@ -58,6 +60,8 @@ pub struct CPURegs {
 extern "C" fn ParaVirtHooks(regs: *mut CPURegs) {
     println!("MemzpReadByte");
 }
+*/
+use crate::cpu::Sim;
 fn main() -> Result<()> {
     // `()` can be used when no completer is required
     let mut rl = DefaultEditor::new()?;
@@ -65,18 +69,19 @@ fn main() -> Result<()> {
     if rl.load_history("history.txt").is_err() {
         println!("No previous history.");
     }
-    unsafe {
-        Reset();
-        ExecuteInsn();
-        let regs = ReadRegisters();
-        println!("ac: {:02x}", (*regs).ac);
-        println!("xr: {:02x}", (*regs).xr);
-        println!("yr: {:02x}", (*regs).yr);
-        println!("zr: {:02x}", (*regs).zr);
-        println!("sr: {:02x}", (*regs).sr);
-        println!("sp: {:02x}", (*regs).sp);
-        println!("pc: {:02x}", (*regs).pc);
-    }
+
+    // unsafe {
+    Sim::reset();
+    Sim::execute_insn();
+    let regs = crate::cpu::Sim::read_registers();
+    println!("ac: {:02x}", Sim::read_ac());
+    println!("xr: {:02x}", Sim::read_xr());
+    println!("yr: {:02x}", Sim::read_yr());
+    println!("zr: {:02x}", Sim::read_zr());
+    println!("sr: {:02x}", Sim::read_sr());
+    println!("sp: {:02x}", Sim::read_sp());
+    println!("pc: {:02x}", Sim::read_pc());
+    //}
     loop {
         let readline = rl.readline(">> ");
         match readline {
