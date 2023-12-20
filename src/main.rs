@@ -1,7 +1,8 @@
 use rustyline::error::ReadlineError;
-use rustyline::{DefaultEditor, Result};
+use rustyline::DefaultEditor;
 use std::os::raw::c_char;
 mod cpu;
+mod loader;
 /*
 extern "C" {
     pub fn ExecuteInsn() -> u32;
@@ -62,6 +63,7 @@ extern "C" fn ParaVirtHooks(regs: *mut CPURegs) {
 }
 */
 use crate::cpu::Sim;
+use anyhow::Result;
 fn main() -> Result<()> {
     // `()` can be used when no completer is required
     let mut rl = DefaultEditor::new()?;
@@ -69,11 +71,11 @@ fn main() -> Result<()> {
     if rl.load_history("history.txt").is_err() {
         println!("No previous history.");
     }
-
+    let (sp, run) = loader::load_code().unwrap();
     // unsafe {
     Sim::reset();
     Sim::execute_insn();
-    let regs = crate::cpu::Sim::read_registers();
+    //let regs = crate::cpu::Sim::read_registers();
     println!("ac: {:02x}", Sim::read_ac());
     println!("xr: {:02x}", Sim::read_xr());
     println!("yr: {:02x}", Sim::read_yr());
