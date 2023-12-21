@@ -1,13 +1,12 @@
 use anyhow::{bail, Result};
 use std::fs::File;
 use std::io::{BufReader, Bytes, Read};
-use std::iter;
 
 use crate::cpu::Sim;
 static HEADER: &'static [u8] = &[0x73, 0x69, 0x6D, 0x36, 0x35];
-pub fn load_code() -> Result<(u16, u16)> {
-    let f = File::open("test")?;
-    let mut reader = BufReader::new(f);
+pub fn load_code() -> Result<(u8, u16, u8)> {
+    let f = File::open("asmtest")?;
+    let reader = BufReader::new(f);
     let mut bytes = reader.bytes();
 
     for i in 0..5 {
@@ -21,8 +20,11 @@ pub fn load_code() -> Result<(u16, u16)> {
     if b != 2 {
         bail!("invalid header");
     }
-
-    let sp = get_u16(&mut bytes)?;
+    let cpu = bytes.next().unwrap()?;
+    if cpu != 0 && cpu != 1 {
+        bail!("invalid header");
+    }
+    let sp = bytes.next().unwrap()?;
     let mut load = get_u16(&mut bytes)?;
     let run = get_u16(&mut bytes)?;
 
@@ -31,11 +33,11 @@ pub fn load_code() -> Result<(u16, u16)> {
         if b.is_none() {
             break;
         }
-        Sim::write_memory(load, b.unwrap()?);
+        Sim::write_byte(load, b.unwrap()?);
         load += 1;
     }
 
-    Ok((sp, run))
+    Ok((sp, run, cpu))
 }
 fn get_u16(bytes: &mut Bytes<BufReader<File>>) -> Result<u16> {
     let b1 = bytes.next().unwrap()? as u16;

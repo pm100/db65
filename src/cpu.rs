@@ -2,11 +2,13 @@ use std::os::raw::c_char;
 static mut THECPU: Cpu = Cpu {
     ram: [0; 65536],
     regs: std::ptr::null_mut(),
+    exit: false,
 };
 struct Cpu {
     ram: [u8; 65536],
     // registers
     regs: *mut CPURegs,
+    exit: bool,
 }
 
 // our callable functions into sim65
@@ -25,31 +27,33 @@ extern "C" {
 extern "C" fn MemWriteByte(_addr: u32, _val: u8) {
     println!("MemWriteByte {:04x} {:02x}", _addr, _val);
     unsafe {
-        THECPU.write_memory(_addr as u16, _val);
+        THECPU.write_byte(_addr as u16, _val);
     }
 }
 
 #[no_mangle]
-extern "C" fn MemReadWord(_addr: u32) -> u32 {
-    println!("MemReadWord {:04x}", _addr);
+extern "C" fn MemReadWord(addr: u32) -> u32 {
     unsafe {
-        return THECPU.read_memory(_addr as u16) as u32;
+        let w = THECPU.read_word(addr as u16) as u32;
+        println!("MemReadWord {:04x} = {:04x}", addr, w);
+        w
     }
 }
 #[no_mangle]
-extern "C" fn MemReadByte(_addr: u32) -> u8 {
-    println!("MemReadByte {:04x}", _addr);
+extern "C" fn MemReadByte(addr: u32) -> u8 {
     unsafe {
-        return THECPU.read_memory(_addr as u16);
+        let b = THECPU.read_byte(addr as u16);
+        println!("MemReadByte {:04x} = {:02x}", addr, b);
+        b
     }
 }
 #[no_mangle]
 extern "C" fn MemReadZPWord(mut addr: u8) -> u16 {
     println!("MemReadZPWord");
     unsafe {
-        let b1 = THECPU.read_memory(addr as u16) as u16;
+        let b1 = THECPU.read_byte(addr as u16) as u16;
         addr = addr.wrapping_add(1);
-        let b2 = THECPU.read_memory(addr as u16) as u16;
+        let b2 = THECPU.read_byte(addr as u16) as u16;
         return b1 | (b2 << 8);
     }
 }
@@ -65,8 +69,13 @@ extern "C" fn Error(_format: *const c_char, x: u32, y: u32) -> u32 {
 }
 #[no_mangle]
 
-extern "C" fn ParaVirtHooks(regs: *mut CPURegs) {
-    println!("ParHook");
+extern "C" fn ParaVirtHooks(_regs: *mut CPURegs) {
+    println!("==>ParHook {:04x}", Sim::read_pc());
+    if Sim::read_pc() == 0xfff9 {
+        unsafe {
+            THECPU.exit = true;
+        }
+    }
 }
 #[repr(C)]
 pub struct CPURegs {
@@ -80,9 +89,15 @@ pub struct CPURegs {
 }
 pub struct Sim {}
 impl Sim {
+    pub fn exit_done() -> bool {
+        unsafe {
+            return THECPU.exit;
+        }
+    }
     pub fn reset() {
         unsafe {
             THECPU.regs = ReadRegisters();
+            THECPU.exit = false;
             Reset();
         }
     }
@@ -145,47 +160,61 @@ impl Sim {
     pub fn read_pc() -> u16 {
         unsafe { (*THECPU.regs).pc as u16 }
     }
-    pub fn write_memory(addr: u16, val: u8) {
+    pub fn write_byte(addr: u16, val: u8) {
         unsafe {
-            THECPU.write_memory(addr, val);
+            THECPU.write_byte(addr, val);
         }
     }
-    pub fn read_memory(addr: u16) -> u8 {
-        unsafe { THECPU.read_memory(addr) }
+    pub fn write_word(addr: u16, val: u16) {
+        unsafe {
+            THECPU.write_word(addr, val);
+        }
+    }
+
+    pub fn read_byte(addr: u16) -> u8 {
+        unsafe { THECPU.read_byte(addr) }
     }
 }
 
 impl Cpu {
-    fn read_memory(&mut self, addr: u16) -> u8 {
+    fn read_byte(&mut self, addr: u16) -> u8 {
         self.ram[addr as usize]
     }
-    fn write_memory(&mut self, addr: u16, val: u8) {
+    fn read_word(&mut self, addr: u16) -> u16 {
+        let b1 = self.ram[addr as usize] as u16;
+        let b2 = self.ram[(addr + 1) as usize] as u16;
+        b1 | (b2 << 8)
+    }
+    fn write_byte(&mut self, addr: u16, val: u8) {
         self.ram[addr as usize] = val;
     }
-    fn reset(&mut self) {
-        unsafe {
-            Reset();
-        }
+    fn write_word(&mut self, addr: u16, val: u16) {
+        self.ram[addr as usize] = (val & 0xff) as u8;
+        self.ram[(addr + 1) as usize] = (val >> 8) as u8;
     }
-    fn execute_insn(&mut self) -> u32 {
-        unsafe { ExecuteInsn() }
-    }
-    fn read_registers(&mut self) -> *mut CPURegs {
-        unsafe { ReadRegisters() }
-    }
-    fn print_registers(&mut self) {
-        let regs = self.read_registers();
-        unsafe {
-            println!("ac: {:02x}", (*regs).ac);
-            println!("xr: {:02x}", (*regs).xr);
-            println!("yr: {:02x}", (*regs).yr);
-            println!("zr: {:02x}", (*regs).zr);
-            println!("sr: {:02x}", (*regs).sr);
-            println!("sp: {:02x}", (*regs).sp);
-            println!("pc: {:02x}", (*regs).pc);
-        }
-    }
-    fn run(sp: u16, start: u16) {}
+    // fn reset(&mut self) {
+    //     unsafe {
+    //         Reset();
+    //     }
+    // }
+    // fn execute_insn(&mut self) -> u32 {
+    //     unsafe { ExecuteInsn() }
+    // }
+    // fn read_registers(&mut self) -> *mut CPURegs {
+    //     unsafe { ReadRegisters() }
+    // }
+    // fn print_registers(&mut self) {
+    //     let regs = self.read_registers();
+    //     unsafe {
+    //         println!("ac: {:02x}", (*regs).ac);
+    //         println!("xr: {:02x}", (*regs).xr);
+    //         println!("yr: {:02x}", (*regs).yr);
+    //         println!("zr: {:02x}", (*regs).zr);
+    //         println!("sr: {:02x}", (*regs).sr);
+    //         println!("sp: {:02x}", (*regs).sp);
+    //         println!("pc: {:02x}", (*regs).pc);
+    //     }
+    // }
 }
 #[test]
 fn regreadwrite() {
