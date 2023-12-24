@@ -1,17 +1,32 @@
-use anyhow::Result;
+use anyhow::{bail, Result};
+pub enum StopReason {
+    BreakPoint,
+    Exit,
+    Count,
+}
+use crate::{cpu::Sim, debugger::Debugger};
+impl Debugger {
+    pub fn execute(&mut self, mut count: u16) -> Result<StopReason> {
+        let counting = count > 0;
+        loop {
+            if counting {
+                count -= 1;
+                if count == 0 {
+                    return Ok(StopReason::Count);
+                }
+            }
 
-use crate::cpu::Sim;
-pub fn execute(sp: u8, start: u16) -> Result<()> {
-    Sim::reset();
-    //Sim::write_sp(sp);
-    Sim::write_word(0xFFFC, start);
-    Sim::reset();
-    for _i in 0..700 {
-        println!("PC:{:04x}, A:{:02x}", Sim::read_pc(), Sim::read_ac());
-        Sim::execute_insn();
-        if Sim::exit_done() {
-            break;
+            Sim::execute_insn();
+            //  did we hit a breakpoint?
+            let pc = Sim::read_pc();
+            if self.break_points.contains_key(&pc) {
+                // println!("breakpoint");
+                return Ok(StopReason::BreakPoint);
+            }
+
+            if Sim::exit_done() {
+                return Ok(StopReason::Exit);
+            }
         }
     }
-    Ok(())
 }

@@ -1,7 +1,10 @@
 use std::os::raw::c_char;
+
+use crate::paravirt::ParaVirt;
 static mut THECPU: Cpu = Cpu {
     ram: [0; 65536],
     regs: std::ptr::null_mut(),
+    sp65_addr: 0,
     exit: false,
 };
 struct Cpu {
@@ -9,6 +12,7 @@ struct Cpu {
     // registers
     regs: *mut CPURegs,
     exit: bool,
+    sp65_addr: u8,
 }
 
 // our callable functions into sim65
@@ -25,7 +29,7 @@ extern "C" {
 // callback from sim65 to us
 #[no_mangle]
 extern "C" fn MemWriteByte(_addr: u32, _val: u8) {
-    println!("MemWriteByte {:04x} {:02x}", _addr, _val);
+    // println!("MemWriteByte {:04x} {:02x}", _addr, _val);
     unsafe {
         THECPU.write_byte(_addr as u16, _val);
     }
@@ -35,7 +39,7 @@ extern "C" fn MemWriteByte(_addr: u32, _val: u8) {
 extern "C" fn MemReadWord(addr: u32) -> u32 {
     unsafe {
         let w = THECPU.read_word(addr as u16) as u32;
-        println!("MemReadWord {:04x} = {:04x}", addr, w);
+        //   println!("MemReadWord {:04x} = {:04x}", addr, w);
         w
     }
 }
@@ -43,13 +47,13 @@ extern "C" fn MemReadWord(addr: u32) -> u32 {
 extern "C" fn MemReadByte(addr: u32) -> u8 {
     unsafe {
         let b = THECPU.read_byte(addr as u16);
-        println!("MemReadByte {:04x} = {:02x}", addr, b);
+        // println!("MemReadByte {:04x} = {:02x}", addr, b);
         b
     }
 }
 #[no_mangle]
 extern "C" fn MemReadZPWord(mut addr: u8) -> u16 {
-    println!("MemReadZPWord");
+    //println!("MemReadZPWord");
     unsafe {
         let b1 = THECPU.read_byte(addr as u16) as u16;
         addr = addr.wrapping_add(1);
@@ -70,12 +74,10 @@ extern "C" fn Error(_format: *const c_char, x: u32, y: u32) -> u32 {
 #[no_mangle]
 
 extern "C" fn ParaVirtHooks(_regs: *mut CPURegs) {
-    println!("==>ParHook {:04x}", Sim::read_pc());
-    if Sim::read_pc() == 0xfff9 {
-        unsafe {
-            THECPU.exit = true;
-        }
-    }
+    let pc = Sim::read_pc();
+    println!("==>ParHook {:04x}", pc);
+
+    ParaVirt::pv_hooks();
 }
 #[repr(C)]
 pub struct CPURegs {
@@ -87,8 +89,21 @@ pub struct CPURegs {
     pub sp: u32, /* Stackpointer */
     pub pc: u32, /* Program counter */
 }
-pub struct Sim {}
+pub struct Sim;
 impl Sim {
+    pub fn sp65_addr(v: u8) {
+        unsafe {
+            THECPU.sp65_addr = v;
+        }
+    }
+    pub fn set_exit(_code: u8) {
+        unsafe {
+            THECPU.exit = true;
+        }
+    }
+    pub fn get_sp65_addr() -> u8 {
+        unsafe { THECPU.sp65_addr }
+    }
     pub fn exit_done() -> bool {
         unsafe {
             return THECPU.exit;
@@ -174,6 +189,9 @@ impl Sim {
     pub fn read_byte(addr: u16) -> u8 {
         unsafe { THECPU.read_byte(addr) }
     }
+    pub fn read_word(addr: u16) -> u16 {
+        unsafe { THECPU.read_word(addr) }
+    }
 }
 
 impl Cpu {
@@ -192,29 +210,6 @@ impl Cpu {
         self.ram[addr as usize] = (val & 0xff) as u8;
         self.ram[(addr + 1) as usize] = (val >> 8) as u8;
     }
-    // fn reset(&mut self) {
-    //     unsafe {
-    //         Reset();
-    //     }
-    // }
-    // fn execute_insn(&mut self) -> u32 {
-    //     unsafe { ExecuteInsn() }
-    // }
-    // fn read_registers(&mut self) -> *mut CPURegs {
-    //     unsafe { ReadRegisters() }
-    // }
-    // fn print_registers(&mut self) {
-    //     let regs = self.read_registers();
-    //     unsafe {
-    //         println!("ac: {:02x}", (*regs).ac);
-    //         println!("xr: {:02x}", (*regs).xr);
-    //         println!("yr: {:02x}", (*regs).yr);
-    //         println!("zr: {:02x}", (*regs).zr);
-    //         println!("sr: {:02x}", (*regs).sr);
-    //         println!("sp: {:02x}", (*regs).sp);
-    //         println!("pc: {:02x}", (*regs).pc);
-    //     }
-    // }
 }
 #[test]
 fn regreadwrite() {

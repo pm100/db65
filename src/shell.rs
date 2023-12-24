@@ -1,7 +1,8 @@
 use crate::debugger::Debugger;
-use anyhow::Result;
-use clap::Parser;
-use regex::Regex;
+use anyhow::{anyhow, bail, Result};
+use clap::Command;
+use clap::{Arg, Parser};
+
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use std::path::Path;
@@ -30,33 +31,20 @@ impl Shell {
     pub fn shell(&mut self) -> Result<()> {
         // `()` can be used when no completer is required
         let mut rl = DefaultEditor::new()?;
-        #[cfg(feature = "with-file-history")]
+        //#[cfg(feature = "with-file-history")]
         if rl.load_history("history.txt").is_err() {
             println!("No previous history.");
         }
-        let reg = Regex::new(r" ")?;
+
         loop {
             let readline = rl.readline(">> ");
 
             match readline {
                 Ok(line) => {
                     rl.add_history_entry(line.as_str())?;
-                    println!("Line: {}", line);
-                    let mut spl = reg.split(&line);
-                    let mut cmd = spl.next().unwrap();
-                    //   println!("cmd={}", cmd);
-                    if cmd.trim().is_empty() {
-                        cmd = spl.next().unwrap();
-                        //  println!("cmd={}", cmd);
-                    }
-                    println!("cmd={}", cmd);
-                    let args = spl.collect();
-                    match cmd {
-                        "load" => self.load_code(args),
-                        "quit" => break,
-                        "ll" => self.load_symbols(args),
-                        "break" => self.set_break(args),
-                        _ => println!("what"),
+
+                    if let Err(e) = self.dispatch(&line) {
+                        println!("{}", e);
                     }
                 }
                 Err(ReadlineError::Interrupted) => {
@@ -73,8 +61,8 @@ impl Shell {
                 }
             }
         }
-        #[cfg(feature = "with-file-history")]
-        rl.save_history("history.txt");
+        //ß #[cfg(feature = "with-file-history")]
+        let _ = rl.save_history("history.txt");
         Ok(())
     }
 
@@ -89,12 +77,12 @@ impl Shell {
         let p = Path::new("ll");
         self.debugger.load_ll(&p).unwrap();
     }
-    fn set_break(&mut self, args: Vec<&str>) {
+    fn set_break(&mut self, args: Vec<&str>) -> Result<()> {
         let c = BreakPoint::parse_from(args);
         // c.addr;
         println!("{:?}", c);
         if let Some(ad) = c.addr {
-            self.debugger.set_break(&ad);
+            self.debugger.set_break(&ad)?;
         } else {
             let blist = self.debugger.get_breaks();
 
@@ -103,61 +91,146 @@ impl Shell {
             }
             //  blist.iter().map(|a| );
         }
-    }
-}
-use clap::Command;
-fn respond(line: &str) -> Result<bool, String> {
-    let args = shlex::split(line).ok_or("error: Invalid quoting")?;
-    let matches = cli()
-        .try_get_matches_from(args)
-        .map_err(|e| e.to_string())?;
-    match matches.subcommand() {
-        Some(("ping", _matches)) => {
-            // write!(std::io::stdout(), "Pong").map_err(|e| e.to_string())?;
-            // std::io::stdout().flush().map_err(|e| e.to_string())?;
-            println!("ping");
-        }
-        Some(("quit", _matches)) => {
-            //  write!(std::io::stdout(), "Exiting ...").map_err(|e| e.to_string())?;
-            //  std::io::stdout().flush().map_err(|e| e.to_string())?;
-            return Ok(true);
-        }
-        Some((name, _matches)) => unimplemented!("{name}"),
-        None => unreachable!("subcommand required"),
+        Ok(())
     }
 
-    Ok(false)
-}
+    fn dispatch(&mut self, line: &str) -> Result<bool> {
+        let args = shlex::split(line).ok_or(anyhow!("error: Invalid quoting"))?;
+        let matches = self.syntax().try_get_matches_from(args)?;
+        //.map_err(|e| e.to_string())?;
+        match matches.subcommand() {
+            Some(("break", args)) => {
+                if let Some(addr) = args.get_one::<String>("address") {
+                    self.debugger.set_break(&addr);
+                } else {
+                    let blist = self.debugger.get_breaks();
+                    for i in 0..blist.len() {
+                        println!("{:04x}", blist[i]);
+                    }
+                }
+            }
+            Some(("symbols", args)) => {
+                let file = args.get_one::<String>("file").unwrap();
+                self.debugger.load_ll(Path::new(file))?;
+            }
+            Some(("load_code", args)) => {
+                let file = args.get_one::<String>("file").unwrap();
+                self.debugger.load_code(Path::new(file))?;
+            }
+            Some(("quit", _matches)) => {
+                println!("quit");
+                return Ok(true);
+            }
+            Some(("memory", args)) => {
+                let addr = args.get_one::<String>("address").unwrap();
+                // let addr = u16::from_str_radix(&addr[1..], 16).unwrap();
+                let string = args.get_one::<bool>("string").is_some();
+                println!("memory {} {}", addr, string);
+            }
+            Some(("run", args)) => {
+                // let addr = args.get_one::<String>("address").unwrap();
+                self.debugger.run()?;
+                // println!("run {}", addr);
+            }
+            Some(("go", args)) => {
+                // let addr = args.get_one::<String>("address").unwrap();
+                self.debugger.go()?;
+                // println!("run {}", addr);
+            }
+            Some((name, _matches)) => unimplemented!("{name}"),
+            None => unreachable!("subcommand required"),
+        }
 
-fn cli() -> Command {
-    // strip out usage
-    const PARSER_TEMPLATE: &str = "\
+        Ok(false)
+    }
+
+    fn syntax(&self) -> Command {
+        // strip out usage
+        const PARSER_TEMPLATE: &str = "\
         {all-args}
     ";
-    // strip out name/version
-    const APPLET_TEMPLATE: &str = "\
+        // strip out name/version
+        const APPLET_TEMPLATE: &str = "\
         {about-with-newline}\n\
         {usage-heading}\n    {usage}\n\
         \n\
         {all-args}{after-help}\
     ";
 
-    Command::new("repl")
-        .multicall(true)
-        .arg_required_else_help(true)
-        .subcommand_required(true)
-        .subcommand_value_name("APPLET")
-        .subcommand_help_heading("APPLETS")
-        .help_template(PARSER_TEMPLATE)
-        .subcommand(
-            Command::new("ping")
-                .about("Get a response")
-                .help_template(APPLET_TEMPLATE),
-        )
-        .subcommand(
-            Command::new("quit")
-                .alias("exit")
-                .about("Quit the REPL")
-                .help_template(APPLET_TEMPLATE),
-        )
+        Command::new("db65")
+            .multicall(true)
+            .arg_required_else_help(true)
+            .subcommand_required(true)
+            .subcommand_value_name("Command")
+            .subcommand_help_heading("Commands")
+            .help_template(PARSER_TEMPLATE)
+            .subcommand(
+                Command::new("break")
+                    .about("set break points, no argument means list all")
+                    .arg(Arg::new("address"))
+                    .help_template(APPLET_TEMPLATE),
+            )
+            .subcommand(
+                Command::new("symbols")
+                    .alias("ll")
+                    .about("load symbol file")
+                    .arg(Arg::new("file").required(true))
+                    .arg_required_else_help(true)
+                    .help_template(APPLET_TEMPLATE),
+            )
+            .subcommand(
+                Command::new("load_code")
+                    .alias("load")
+                    .about("load binary file")
+                    .arg(Arg::new("file").required(true))
+                    .arg_required_else_help(true)
+                    .help_template(APPLET_TEMPLATE),
+            )
+            .subcommand(
+                Command::new("run")
+                    .about("run code")
+                    .arg(Arg::new("address"))
+                    .help_template(APPLET_TEMPLATE),
+            )
+            .subcommand(
+                Command::new("dis")
+                    .about("disassemble")
+                    .arg(Arg::new("address"))
+                    .help_template(APPLET_TEMPLATE),
+            )
+            .subcommand(
+                Command::new("quit")
+                    .alias("exit")
+                    .about("Quit db65")
+                    .help_template(APPLET_TEMPLATE),
+            )
+            .subcommand(
+                Command::new("next")
+                    .alias("n")
+                    .about("next instruction (step over)")
+                    .help_template(APPLET_TEMPLATE),
+            )
+            .subcommand(
+                Command::new("go")
+                    .alias("g")
+                    .about("resume execution")
+                    .help_template(APPLET_TEMPLATE),
+            )
+            .subcommand(
+                Command::new("step")
+                    .alias("s")
+                    .about("next instruction (step into)")
+                    .help_template(APPLET_TEMPLATE),
+            )
+            .subcommand(
+                Command::new("memory")
+                    .aliases(["mem", "m"])
+                    .about("display memory")
+                    .arg(Arg::new("address").required(true))
+                    .arg(
+                        Arg::new("string").short('s').long("string").num_args(0), // .takes_value(false),
+                    )
+                    .help_template(APPLET_TEMPLATE),
+            )
+    }
 }

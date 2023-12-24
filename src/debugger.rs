@@ -5,9 +5,13 @@ use std::{
     io::{BufRead, BufReader},
     path::Path,
 };
+
+use crate::{cpu::Sim, execute::StopReason, loader};
 pub struct Debugger {
     symbols: HashMap<String, u16>,
-    break_points: HashMap<u16, BreakPoint>,
+    pub break_points: HashMap<u16, BreakPoint>,
+    loader_sp: u8,
+    loader_start: u16,
 }
 pub struct BreakPoint {
     addr: u16,
@@ -16,12 +20,15 @@ pub struct BreakPoint {
 }
 impl Debugger {
     pub fn new() -> Self {
+        Sim::reset();
         Self {
             symbols: HashMap::new(),
             break_points: HashMap::new(),
+            loader_sp: 0,
+            loader_start: 0,
         }
     }
-    pub fn set_break(&mut self, addr_str: &str) {
+    pub fn set_break(&mut self, addr_str: &str) -> Result<()> {
         let mut bp_addr;
         let sym = self.symbols.get(addr_str);
         let mut save_sym = String::new();
@@ -31,9 +38,9 @@ impl Debugger {
         } else {
             if addr_str.chars().next().unwrap() == '$' {
                 let rest = addr_str[1..].to_string();
-                bp_addr = u16::from_str_radix(&rest, 16).unwrap();
+                bp_addr = u16::from_str_radix(&rest, 16)?;
             } else {
-                bp_addr = u16::from_str_radix(addr_str, 16).unwrap();
+                bp_addr = u16::from_str_radix(addr_str, 16)?;
             }
         }
         self.break_points.insert(
@@ -44,6 +51,7 @@ impl Debugger {
                 number: 42,
             },
         );
+        Ok(())
     }
     pub fn load_ll(&mut self, file: &Path) -> Result<()> {
         let f = File::open(file)?;
@@ -67,7 +75,57 @@ impl Debugger {
         }
         Ok(())
     }
+    pub fn load_code(&mut self, file: &Path) -> Result<()> {
+        let (sp65_addr, run, cpu, size) = loader::load_code(file)?;
+        println!("size={:x}, entry={:x}, cpu={}", size, run, cpu);
+        Sim::sp65_addr(sp65_addr);
+
+        self.loader_start = run;
+
+        Ok(())
+    }
     pub fn get_breaks(&self) -> Vec<u16> {
         self.break_points.iter().map(|bp| bp.1.addr).collect()
+    }
+    pub fn go(&mut self) -> Result<()> {
+        self.core_run()?;
+        Ok(())
+    }
+    pub fn next(&mut self) -> Result<()> {
+        let reason = self.execute(1)?;
+        match reason {
+            StopReason::BreakPoint => {
+                println!("breakpoint");
+            }
+            StopReason::Exit => {
+                println!("exit");
+            }
+            StopReason::Count => {
+                println!("count");
+            }
+        }
+        Ok(())
+    }
+    fn core_run(&mut self) -> Result<()> {
+        let reason = self.execute(0)?; // 0 = forever
+        match reason {
+            StopReason::BreakPoint => {
+                println!("breakpoint");
+            }
+            StopReason::Exit => {
+                println!("exit");
+            }
+            StopReason::Count => {
+                println!("count");
+            }
+        }
+        Ok(())
+    }
+    pub fn run(&mut self) -> Result<()> {
+        //  Sim::write_sp(self.loader_sp);
+        Sim::write_word(0xFFFC, self.loader_start);
+        Sim::reset();
+        self.core_run()?;
+        Ok(())
     }
 }
