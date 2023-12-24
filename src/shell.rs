@@ -137,6 +137,11 @@ impl Shell {
                 self.debugger.go()?;
                 // println!("run {}", addr);
             }
+            Some(("next", args)) => {
+                // let addr = args.get_one::<String>("address").unwrap();
+                self.debugger.next()?;
+                // println!("run {}", addr);
+            }
             Some((name, _matches)) => unimplemented!("{name}"),
             None => unreachable!("subcommand required"),
         }

@@ -91,6 +91,9 @@ impl Debugger {
         self.core_run()?;
         Ok(())
     }
+    fn state(&self) {
+        println!("pc={:04x}", Sim::read_pc());
+    }
     pub fn next(&mut self) -> Result<()> {
         let reason = self.execute(1)?;
         match reason {
@@ -104,6 +107,7 @@ impl Debugger {
                 println!("count");
             }
         }
+        self.state();
         Ok(())
     }
     fn core_run(&mut self) -> Result<()> {
@@ -119,6 +123,7 @@ impl Debugger {
                 println!("count");
             }
         }
+        self.state();
         Ok(())
     }
     pub fn run(&mut self) -> Result<()> {

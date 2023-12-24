@@ -75,7 +75,7 @@ extern "C" fn Error(_format: *const c_char, x: u32, y: u32) -> u32 {
 
 extern "C" fn ParaVirtHooks(_regs: *mut CPURegs) {
     let pc = Sim::read_pc();
-    println!("==>ParHook {:04x}", pc);
+    //  println!("==>ParHook {:04x}", pc);
 
     ParaVirt::pv_hooks();
 }
