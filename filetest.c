@@ -11,7 +11,7 @@ int main()
     // foo = fopen("foo.txt", "r");
     // printf("fd=%d len=%d\n", fileno(foo), len);
     // fgets(buf, 100, foo);
-    // printf("buf=%s\n", buf);
+    printf("hello: ");
     // fclose(foo);
     // fprintf(stderr, "hello stderr\n");
     scanf("%s", buf);
