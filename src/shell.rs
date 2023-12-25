@@ -1,4 +1,5 @@
-use crate::debugger::Debugger;
+use crate::debugger::{Debugger, FrameType::*, StackFrame};
+use crate::execute::StopReason;
 use anyhow::{anyhow, bail, Result};
 use clap::Command;
 use clap::{Arg, Parser};
@@ -14,17 +15,6 @@ pub struct Shell {
     current_mem_addr: u16,
 }
 
-#[derive(Debug, Parser, Default)]
-#[command(about, version, no_binary_name(true))]
-struct BreakPoint {
-    //#[arg()]
-    //#[arg(long, short, default_value_t = String::from("Default endpoint"))]
-    /// RPC endpoint of the node that this wallet will connect to
-    addr: Option<String>,
-
-    // #[arg(long, short)]
-    refresh_rate: Option<u32>,
-}
 impl Shell {
     pub fn new() -> Self {
         Self {
@@ -79,34 +69,6 @@ impl Shell {
         Ok(())
     }
 
-    fn load_code(&mut self, args: Vec<&str>) {
-        //let input = vec!["--endpoint", "localhost:8000", "--refresh-rate", "15"];
-
-        //let c = Cli::parse_from(args);
-    }
-
-    fn load_symbols(&mut self, args: Vec<&str>) {
-        //let mut d = Debugger::new();
-        let p = Path::new("ll");
-        self.debugger.load_ll(&p).unwrap();
-    }
-    fn set_break(&mut self, args: Vec<&str>) -> Result<()> {
-        let c = BreakPoint::parse_from(args);
-        // c.addr;
-        println!("{:?}", c);
-        if let Some(ad) = c.addr {
-            self.debugger.set_break(&ad)?;
-        } else {
-            let blist = self.debugger.get_breaks();
-
-            for i in 0..blist.len() {
-                println!("{:04x}", blist[i]);
-            }
-            //  blist.iter().map(|a| );
-        }
-        Ok(())
-    }
-
     fn dispatch(&mut self, line: &str) -> Result<bool> {
         let args = shlex::split(line).ok_or(anyhow!("error: Invalid quoting"))?;
         let matches = self.syntax().try_get_matches_from(args)?;
@@ -114,7 +76,7 @@ impl Shell {
         match matches.subcommand() {
             Some(("break", args)) => {
                 if let Some(addr) = args.get_one::<String>("address") {
-                    self.debugger.set_break(&addr)?;
+                    self.debugger.set_break(&addr, false)?;
                 } else {
                     let blist = self.debugger.get_breaks();
                     for i in 0..blist.len() {
@@ -142,24 +104,38 @@ impl Shell {
                 //println!("memory {} {}", addr, string);
             }
             Some(("run", args)) => {
+                let reason = self.debugger.run()?;
+                self.stop(reason);
+            }
+            Some(("go", _args)) => {
                 // let addr = args.get_one::<String>("address").unwrap();
-                self.debugger.run()?;
+                let reason = self.debugger.go()?;
+                self.stop(reason);
+            }
+            Some(("next", _args)) => {
+                // let addr = args.get_one::<String>("address").unwrap();
+                let reason = self.debugger.next()?;
+                self.stop(reason);
+            }
+            Some(("step", _args)) => {
+                // let addr = args.get_one::<String>("address").unwrap();
+                let reason = self.debugger.step()?;
+                self.stop(reason);
                 // println!("run {}", addr);
             }
-            Some(("go", args)) => {
-                // let addr = args.get_one::<String>("address").unwrap();
-                self.debugger.go()?;
-                // println!("run {}", addr);
-            }
-            Some(("next", args)) => {
-                // let addr = args.get_one::<String>("address").unwrap();
-                self.debugger.next()?;
-                // println!("run {}", addr);
-            }
-            Some(("step", args)) => {
-                // let addr = args.get_one::<String>("address").unwrap();
-                // self.debugger.step()?;
-                // println!("run {}", addr);
+            Some(("back_trace", _args)) => {
+                let stack = self.debugger.read_stack();
+                for i in (0..stack.len()).rev() {
+                    let frame = &stack[i];
+                    match frame.frame_type {
+                        Jsr((addr, ret)) => {
+                            println!("jsr {:<10} x{:04x}", self.debugger.symbol_lookup(addr), ret)
+                        }
+                        Pha(ac) => println!("pha x{:02x}", ac),
+                        Php(sr) => println!("php x{:02x}", sr),
+                        _ => {}
+                    }
+                }
             }
             Some(("dis", args)) => {
                 let mut addr = if let Some(addr_str) = args.get_one::<String>("address") {
@@ -212,6 +188,27 @@ impl Shell {
             addr += 1;
         }
         println!("{}", line);
+    }
+    fn stop(&mut self, reason: StopReason) {
+        match reason {
+            StopReason::BreakPoint => {
+                println!("breakpoint");
+            }
+            StopReason::Exit => {
+                println!("exit");
+            }
+            StopReason::Count => {
+                println!("count");
+            }
+        }
+        let inst_addr = self.debugger.read_pc();
+        let mem = self.debugger.get_chunk(self.debugger.read_pc(), 3).unwrap();
+        self.debugger.dis(&mem, inst_addr);
+        println!(
+            "{:04x}:    {}",
+            self.debugger.read_pc(),
+            self.debugger.dis_line
+        );
     }
     fn syntax(&self) -> Command {
         // strip out usage
@@ -296,6 +293,12 @@ impl Shell {
                     .aliases(["mem", "m"])
                     .about("display memory")
                     .arg(Arg::new("address").required(true))
+                    .help_template(APPLET_TEMPLATE),
+            )
+            .subcommand(
+                Command::new("back_trace")
+                    .alias("bt")
+                    .about("display call stack")
                     .help_template(APPLET_TEMPLATE),
             )
     }

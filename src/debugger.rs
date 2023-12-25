@@ -13,11 +13,24 @@ pub struct Debugger {
     loader_sp: u8,
     loader_start: u16,
     pub(crate) dis_line: String,
+    pub(crate) ticks: usize,
+    pub(crate) stack_frames: Vec<StackFrame>,
+}
+#[derive(Debug)]
+pub(crate) enum FrameType {
+    Jsr((u16, u16)), // addr, return addr
+    Pha(u8),
+    Php(u8),
+}
+#[derive(Debug)]
+pub struct StackFrame {
+    pub(crate) frame_type: FrameType,
 }
 pub struct BreakPoint {
-    addr: u16,
-    symbol: String,
-    number: u16,
+    pub(crate) addr: u16,
+    pub(crate) symbol: String,
+    pub(crate) number: u16,
+    pub(crate) temp: bool,
 }
 impl Debugger {
     pub fn new() -> Self {
@@ -28,9 +41,11 @@ impl Debugger {
             loader_sp: 0,
             loader_start: 0,
             dis_line: String::new(),
+            ticks: 0,
+            stack_frames: Vec::new(),
         }
     }
-    pub fn set_break(&mut self, addr_str: &str) -> Result<()> {
+    pub fn set_break(&mut self, addr_str: &str, temp: bool) -> Result<()> {
         let mut bp_addr;
         let sym = self.symbols.get(addr_str);
         let mut save_sym = String::new();
@@ -51,6 +66,7 @@ impl Debugger {
                 addr: bp_addr,
                 symbol: save_sym,
                 number: 42,
+                temp,
             },
         );
         Ok(())
@@ -89,50 +105,43 @@ impl Debugger {
     pub fn get_breaks(&self) -> Vec<u16> {
         self.break_points.iter().map(|bp| bp.1.addr).collect()
     }
-    pub fn go(&mut self) -> Result<()> {
-        self.core_run()?;
-        Ok(())
+    pub fn go(&mut self) -> Result<StopReason> {
+        self.core_run()
     }
     fn state(&self) {
         println!("pc={:04x}", Sim::read_pc());
     }
-    pub fn next(&mut self) -> Result<()> {
-        let reason = self.execute(1)?;
-        match reason {
-            StopReason::BreakPoint => {
-                println!("breakpoint");
-            }
-            StopReason::Exit => {
-                println!("exit");
-            }
-            StopReason::Count => {
-                println!("count");
-            }
-        }
-        self.state();
-        Ok(())
+    pub fn next(&mut self) -> Result<StopReason> {
+        let next_inst = Sim::read_byte(Sim::read_pc());
+        let reason = if next_inst == 0x20 {
+            //jsr
+            let inst = Sim::read_pc() + 3;
+            self.break_points.insert(
+                inst,
+                BreakPoint {
+                    addr: inst,
+                    symbol: String::new(),
+                    number: 42,
+                    temp: true,
+                },
+            );
+            self.execute(0)
+        } else {
+            self.execute(1)
+        };
+        reason
     }
-    fn core_run(&mut self) -> Result<()> {
-        let reason = self.execute(0)?; // 0 = forever
-        match reason {
-            StopReason::BreakPoint => {
-                println!("breakpoint");
-            }
-            StopReason::Exit => {
-                println!("exit");
-            }
-            StopReason::Count => {
-                println!("count");
-            }
-        }
-        self.state();
-        Ok(())
+    pub fn step(&mut self) -> Result<StopReason> {
+        self.execute(1)
     }
-    pub fn run(&mut self) -> Result<()> {
+    fn core_run(&mut self) -> Result<StopReason> {
+        self.execute(0) // 0 = forever
+    }
+    pub fn run(&mut self) -> Result<StopReason> {
         Sim::write_word(0xFFFC, self.loader_start);
         Sim::reset();
-        self.core_run()?;
-        Ok(())
+        self.stack_frames.clear();
+        self.core_run()
     }
     pub fn get_chunk(&self, addr: u16, len: u16) -> Result<Vec<u8>> {
         let mut v = Vec::new();
@@ -159,7 +168,7 @@ impl Debugger {
                 return name.to_string();
             }
         }
-        format!("{:04x}", addr)
+        format!("x{:04x}", addr)
     }
     pub fn zp_symbol_lookup(&self, addr: u8) -> String {
         for (name, sym_addr) in &self.symbols {
@@ -171,5 +180,8 @@ impl Debugger {
     }
     pub fn read_pc(&self) -> u16 {
         Sim::read_pc()
+    }
+    pub fn read_stack(&self) -> &Vec<StackFrame> {
+        &self.stack_frames
     }
 }
