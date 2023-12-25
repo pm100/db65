@@ -1,629 +1,629 @@
 use crate::debugger::Debugger;
 
 impl Debugger {
-    pub fn dis(&mut self, mem: &[u8]) -> u8 {
+    pub fn dis(&mut self, mem: &[u8], inst_addr: u16) -> u8 {
         self.dis_line.clear();
         let inst = mem[0];
         match inst {
             0x00 => {
-                self.dis_line.push_str("BRK");
+                self.dis_line.push_str("brk   ");
                 1
             }
             0x01 => {
-                self.dis_line.push_str("ORA");
+                self.dis_line.push_str("ora   ");
                 self.read_operand(mem) + 1
             }
             0x05 => {
-                self.dis_line.push_str("ORA");
+                self.dis_line.push_str("ora   ");
                 self.read_operand(mem) + 1
             }
             0x06 => {
-                self.dis_line.push_str("ASL");
+                self.dis_line.push_str("asl   ");
                 self.read_operand(mem) + 1
             }
             0x08 => {
-                self.dis_line.push_str("PHP");
+                self.dis_line.push_str("php   ");
                 1
             }
             0x09 => {
-                self.dis_line.push_str("ORA");
+                self.dis_line.push_str("ora   ");
                 self.read_operand(mem) + 1
             }
             0x0a => {
-                self.dis_line.push_str("ASL");
+                self.dis_line.push_str("asl   ");
                 1
             }
             0x0d => {
-                self.dis_line.push_str("ORA");
+                self.dis_line.push_str("ora   ");
                 self.read_operand(mem) + 1
             }
             0x0e => {
-                self.dis_line.push_str("ASL");
+                self.dis_line.push_str("asl   ");
                 self.read_operand(mem) + 1
             }
 
             0x10 => {
-                self.dis_line.push_str("BPL");
-                self.read_operand(mem) + 1
+                self.dis_line.push_str("bpl   ");
+                self.branch(mem, inst_addr) + 1
             }
             0x11 => {
-                self.dis_line.push_str("ORA");
+                self.dis_line.push_str("ora   ");
                 self.read_operand(mem) + 1
             }
             0x15 => {
-                self.dis_line.push_str("ORA");
+                self.dis_line.push_str("ora   ");
                 self.read_operand(mem) + 1
             }
             0x16 => {
-                self.dis_line.push_str("ASL");
+                self.dis_line.push_str("asl   ");
                 self.read_operand(mem) + 1
             }
             0x18 => {
-                self.dis_line.push_str("CLC");
+                self.dis_line.push_str("clc   ");
                 1
             }
             0x19 => {
-                self.dis_line.push_str("ORA");
+                self.dis_line.push_str("ora   ");
                 self.read_operand(mem) + 1
             }
             0x1d => {
-                self.dis_line.push_str("ORA");
+                self.dis_line.push_str("ora   ");
                 self.read_operand(mem) + 1
             }
             0x1e => {
-                self.dis_line.push_str("ASL");
+                self.dis_line.push_str("asl   ");
                 self.read_operand(mem) + 1
             }
 
             0x20 => {
-                self.dis_line.push_str("JSR");
+                self.dis_line.push_str("jsr   ");
                 self.read_operand(mem) + 1
             }
             0x21 => {
-                self.dis_line.push_str("AND");
+                self.dis_line.push_str("and   ");
                 self.read_operand(mem) + 1
             }
             0x24 => {
-                self.dis_line.push_str("BIT");
+                self.dis_line.push_str("bit   ");
                 self.read_operand(mem) + 1
             }
             0x25 => {
-                self.dis_line.push_str("AND");
+                self.dis_line.push_str("and   ");
                 self.read_operand(mem) + 1
             }
             0x26 => {
-                self.dis_line.push_str("ROL");
+                self.dis_line.push_str("rol   ");
                 self.read_operand(mem) + 1
             }
             0x28 => {
-                self.dis_line.push_str("PLP");
+                self.dis_line.push_str("plp   ");
                 1
             }
             0x29 => {
-                self.dis_line.push_str("AND");
+                self.dis_line.push_str("and   ");
                 self.read_operand(mem) + 1
             }
             0x2a => {
-                self.dis_line.push_str("ROL");
+                self.dis_line.push_str("rol   ");
                 1
             }
             0x2c => {
-                self.dis_line.push_str("BIT");
+                self.dis_line.push_str("bit   ");
                 self.read_operand(mem) + 1
             }
             0x2d => {
-                self.dis_line.push_str("AND");
+                self.dis_line.push_str("and   ");
                 self.read_operand(mem) + 1
             }
             0x2e => {
-                self.dis_line.push_str("ROL");
+                self.dis_line.push_str("rol   ");
                 self.read_operand(mem) + 1
             }
 
             0x30 => {
-                self.dis_line.push_str("BMI");
-                self.read_operand(mem) + 1
+                self.dis_line.push_str("bmi   ");
+                self.branch(mem, inst_addr) + 1
             }
             0x31 => {
-                self.dis_line.push_str("AND");
+                self.dis_line.push_str("and   ");
                 self.read_operand(mem) + 1
             }
             0x35 => {
-                self.dis_line.push_str("AND");
+                self.dis_line.push_str("and   ");
                 self.read_operand(mem) + 1
             }
             0x36 => {
-                self.dis_line.push_str("ROL");
+                self.dis_line.push_str("rol   ");
                 self.read_operand(mem) + 1
             }
             0x38 => {
-                self.dis_line.push_str("SEC");
+                self.dis_line.push_str("sec   ");
                 1
             }
             0x39 => {
-                self.dis_line.push_str("AND");
+                self.dis_line.push_str("and   ");
                 self.read_operand(mem) + 1
             }
             0x3d => {
-                self.dis_line.push_str("AND");
+                self.dis_line.push_str("and   ");
                 self.read_operand(mem) + 1
             }
             0x3e => {
-                self.dis_line.push_str("ROL");
+                self.dis_line.push_str("rol   ");
                 self.read_operand(mem) + 1
             }
 
             0x40 => {
-                self.dis_line.push_str("RTI");
+                self.dis_line.push_str("rti   ");
                 1
             }
             0x41 => {
-                self.dis_line.push_str("EOR");
+                self.dis_line.push_str("eor   ");
                 self.read_operand(mem) + 1
             }
             0x45 => {
-                self.dis_line.push_str("EOR");
+                self.dis_line.push_str("eor   ");
                 self.read_operand(mem) + 1
             }
             0x46 => {
-                self.dis_line.push_str("LSR");
+                self.dis_line.push_str("lsr   ");
                 self.read_operand(mem) + 1
             }
             0x48 => {
-                self.dis_line.push_str("PHA");
+                self.dis_line.push_str("pha   ");
                 1
             }
             0x49 => {
-                self.dis_line.push_str("EOR");
+                self.dis_line.push_str("eor   ");
                 self.read_operand(mem) + 1
             }
             0x4a => {
-                self.dis_line.push_str("LSR");
+                self.dis_line.push_str("lsr   ");
                 1
             }
             0x4c => {
-                self.dis_line.push_str("JMP");
+                self.dis_line.push_str("jmp   ");
                 self.read_operand(mem) + 1
             }
             0x4d => {
-                self.dis_line.push_str("EOR");
+                self.dis_line.push_str("eor   ");
                 self.read_operand(mem) + 1
             }
             0x4e => {
-                self.dis_line.push_str("LSR");
+                self.dis_line.push_str("lsr   ");
                 self.read_operand(mem) + 1
             }
 
             0x50 => {
-                self.dis_line.push_str("BVC");
-                self.read_operand(mem) + 1
+                self.dis_line.push_str("bvc   ");
+                self.branch(mem, inst_addr) + 1
             }
 
             0x51 => {
-                self.dis_line.push_str("EOR");
+                self.dis_line.push_str("eor   ");
                 self.read_operand(mem) + 1
             }
             0x55 => {
-                self.dis_line.push_str("EOR");
+                self.dis_line.push_str("eor   ");
                 self.read_operand(mem) + 1
             }
             0x56 => {
-                self.dis_line.push_str("LSR");
+                self.dis_line.push_str("lsr   ");
                 self.read_operand(mem) + 1
             }
             0x58 => {
-                self.dis_line.push_str("CLI");
+                self.dis_line.push_str("cli   ");
                 1
             }
             0x59 => {
-                self.dis_line.push_str("EOR");
+                self.dis_line.push_str("eor   ");
                 self.read_operand(mem) + 1
             }
             0x5d => {
-                self.dis_line.push_str("EOR");
+                self.dis_line.push_str("eor   ");
                 self.read_operand(mem) + 1
             }
             0x5e => {
-                self.dis_line.push_str("LSR");
+                self.dis_line.push_str("lsr   ");
                 self.read_operand(mem) + 1
             }
 
             0x60 => {
-                self.dis_line.push_str("RTS");
+                self.dis_line.push_str("rts   ");
                 1
             }
             0x61 => {
-                self.dis_line.push_str("ADC");
+                self.dis_line.push_str("adc   ");
                 self.read_operand(mem) + 1
             }
             0x65 => {
-                self.dis_line.push_str("ADC");
+                self.dis_line.push_str("adc   ");
                 self.read_operand(mem) + 1
             }
             0x66 => {
-                self.dis_line.push_str("ROR");
+                self.dis_line.push_str("ror   ");
                 self.read_operand(mem) + 1
             }
             0x68 => {
-                self.dis_line.push_str("PLA");
+                self.dis_line.push_str("pla   ");
                 1
             }
             0x69 => {
-                self.dis_line.push_str("ADC");
+                self.dis_line.push_str("adc   ");
                 self.read_operand(mem) + 1
             }
             0x6a => {
-                self.dis_line.push_str("ROR");
+                self.dis_line.push_str("ror   ");
                 1
             }
             0x6c => {
-                self.dis_line.push_str("JMP");
+                self.dis_line.push_str("jmp   ");
                 self.read_operand(mem) + 1
             }
             0x6d => {
-                self.dis_line.push_str("ADC");
+                self.dis_line.push_str("adc   ");
                 self.read_operand(mem) + 1
             }
             0x6e => {
-                self.dis_line.push_str("ROR");
+                self.dis_line.push_str("ror   ");
                 self.read_operand(mem) + 1
             }
 
             0x70 => {
-                self.dis_line.push_str("BVS");
-                self.read_operand(mem) + 1
+                self.dis_line.push_str("bvs   ");
+                self.branch(mem, inst_addr) + 1
             }
             0x71 => {
-                self.dis_line.push_str("ADC");
+                self.dis_line.push_str("adc   ");
                 self.read_operand(mem) + 1
             }
             0x75 => {
-                self.dis_line.push_str("ADC");
+                self.dis_line.push_str("adc   ");
                 self.read_operand(mem) + 1
             }
             0x76 => {
-                self.dis_line.push_str("ROR");
+                self.dis_line.push_str("ror   ");
                 self.read_operand(mem) + 1
             }
             0x78 => {
-                self.dis_line.push_str("SEI");
+                self.dis_line.push_str("sei   ");
                 1
             }
             0x79 => {
-                self.dis_line.push_str("ADC");
+                self.dis_line.push_str("adc   ");
                 self.read_operand(mem) + 1
             }
             0x7d => {
-                self.dis_line.push_str("ADC");
+                self.dis_line.push_str("adc   ");
                 self.read_operand(mem) + 1
             }
             0x7e => {
-                self.dis_line.push_str("ROR");
+                self.dis_line.push_str("ror   ");
                 self.read_operand(mem) + 1
             }
 
             0x81 => {
-                self.dis_line.push_str("STA");
+                self.dis_line.push_str("sta   ");
                 self.read_operand(mem) + 1
             }
             0x84 => {
-                self.dis_line.push_str("STY");
+                self.dis_line.push_str("sty   ");
                 self.read_operand(mem) + 1
             }
             0x85 => {
-                self.dis_line.push_str("STA");
+                self.dis_line.push_str("sta   ");
                 self.read_operand(mem) + 1
             }
             0x86 => {
-                self.dis_line.push_str("STX");
+                self.dis_line.push_str("stx   ");
                 self.read_operand(mem) + 1
             }
             0x88 => {
-                self.dis_line.push_str("DEY");
+                self.dis_line.push_str("dey   ");
                 1
             }
             0x8a => {
-                self.dis_line.push_str("TXA");
+                self.dis_line.push_str("txa   ");
                 1
             }
             0x8c => {
-                self.dis_line.push_str("STY");
+                self.dis_line.push_str("sty   ");
                 self.read_operand(mem) + 1
             }
             0x8d => {
-                self.dis_line.push_str("STA");
+                self.dis_line.push_str("sta   ");
                 self.read_operand(mem) + 1
             }
             0x8e => {
-                self.dis_line.push_str("STX");
+                self.dis_line.push_str("stx   ");
                 self.read_operand(mem) + 1
             }
 
             0x90 => {
-                self.dis_line.push_str("BCC");
-                self.read_operand(mem) + 1
+                self.dis_line.push_str("bcc   ");
+                self.branch(mem, inst_addr) + 1
             }
             0x91 => {
-                self.dis_line.push_str("STA");
+                self.dis_line.push_str("sta   ");
                 self.read_operand(mem) + 1
             }
             0x94 => {
-                self.dis_line.push_str("STY");
+                self.dis_line.push_str("sty   ");
                 self.read_operand(mem) + 1
             }
             0x95 => {
-                self.dis_line.push_str("STA");
+                self.dis_line.push_str("sta   ");
                 self.read_operand(mem) + 1
             }
             0x96 => {
-                self.dis_line.push_str("STX");
+                self.dis_line.push_str("stx   ");
                 self.read_operand(mem) + 1
             }
             0x98 => {
-                self.dis_line.push_str("TYA");
+                self.dis_line.push_str("tya   ");
                 1
             }
             0x99 => {
-                self.dis_line.push_str("STA");
+                self.dis_line.push_str("sta   ");
                 self.read_operand(mem) + 1
             }
             0x9a => {
-                self.dis_line.push_str("TXS");
+                self.dis_line.push_str("txs   ");
                 1
             }
             0x9d => {
-                self.dis_line.push_str("STA");
+                self.dis_line.push_str("sta   ");
                 self.read_operand(mem) + 1
             }
 
             0xa0 => {
-                self.dis_line.push_str("LDY");
+                self.dis_line.push_str("ldy   ");
                 self.read_operand(mem) + 1
             }
             0xa1 => {
-                self.dis_line.push_str("LDA");
+                self.dis_line.push_str("lda   ");
                 self.read_operand(mem) + 1
             }
             0xa2 => {
-                self.dis_line.push_str("LDX");
+                self.dis_line.push_str("ldx   ");
                 self.read_operand(mem) + 1
             }
             0xa4 => {
-                self.dis_line.push_str("LDY");
+                self.dis_line.push_str("ldy   ");
                 self.read_operand(mem) + 1
             }
             0xa5 => {
-                self.dis_line.push_str("LDA");
+                self.dis_line.push_str("lda   ");
                 self.read_operand(mem) + 1
             }
             0xa6 => {
-                self.dis_line.push_str("LDX");
+                self.dis_line.push_str("ldx   ");
                 self.read_operand(mem) + 1
             }
             0xa8 => {
-                self.dis_line.push_str("TAY");
+                self.dis_line.push_str("tay   ");
                 1
             }
             0xa9 => {
-                self.dis_line.push_str("LDA");
+                self.dis_line.push_str("lda   ");
                 self.read_operand(mem) + 1
             }
             0xaa => {
-                self.dis_line.push_str("TAX");
+                self.dis_line.push_str("tax   ");
                 1
             }
             0xac => {
-                self.dis_line.push_str("LDY");
+                self.dis_line.push_str("ldy   ");
                 self.read_operand(mem) + 1
             }
             0xad => {
-                self.dis_line.push_str("LDA");
+                self.dis_line.push_str("lda   ");
                 self.read_operand(mem) + 1
             }
             0xae => {
-                self.dis_line.push_str("LDX");
+                self.dis_line.push_str("ldx   ");
                 self.read_operand(mem) + 1
             }
 
             0xb0 => {
-                self.dis_line.push_str("BCS");
-                self.read_operand(mem) + 1
+                self.dis_line.push_str("bcs   ");
+                self.branch(mem, inst_addr) + 1
             }
             0xb1 => {
-                self.dis_line.push_str("LDA");
+                self.dis_line.push_str("lda   ");
                 self.read_operand(mem) + 1
             }
             0xb4 => {
-                self.dis_line.push_str("LDY");
+                self.dis_line.push_str("ldy   ");
                 self.read_operand(mem) + 1
             }
             0xb5 => {
-                self.dis_line.push_str("LDA");
+                self.dis_line.push_str("lda   ");
                 self.read_operand(mem) + 1
             }
             0xb6 => {
-                self.dis_line.push_str("LDX");
+                self.dis_line.push_str("ldx   ");
                 self.read_operand(mem) + 1
             }
 
             0xb8 => {
-                self.dis_line.push_str("CLV");
+                self.dis_line.push_str("clv   ");
                 1
             }
             0xb9 => {
-                self.dis_line.push_str("LDA");
+                self.dis_line.push_str("lda   ");
                 self.read_operand(mem) + 1
             }
             0xba => {
-                self.dis_line.push_str("TSX");
+                self.dis_line.push_str("tsx   ");
                 1
             }
             0xbc => {
-                self.dis_line.push_str("LDY");
+                self.dis_line.push_str("ldy   ");
                 self.read_operand(mem) + 1
             }
             0xbd => {
-                self.dis_line.push_str("LDA");
+                self.dis_line.push_str("lda   ");
                 self.read_operand(mem) + 1
             }
             0xbe => {
-                self.dis_line.push_str("LDX");
+                self.dis_line.push_str("ldx   ");
                 self.read_operand(mem) + 1
             }
 
             0xc0 => {
-                self.dis_line.push_str("CPY");
+                self.dis_line.push_str("cpy   ");
                 self.read_operand(mem) + 1
             }
             0xc1 => {
-                self.dis_line.push_str("CMP");
+                self.dis_line.push_str("cmp   ");
                 self.read_operand(mem) + 1
             }
             0xc4 => {
-                self.dis_line.push_str("CPY");
+                self.dis_line.push_str("cpy   ");
                 self.read_operand(mem) + 1
             }
             0xc5 => {
-                self.dis_line.push_str("CMP");
+                self.dis_line.push_str("cmp   ");
                 self.read_operand(mem) + 1
             }
             0xc6 => {
-                self.dis_line.push_str("DEC");
+                self.dis_line.push_str("dec   ");
                 self.read_operand(mem) + 1
             }
             0xc8 => {
-                self.dis_line.push_str("INY");
+                self.dis_line.push_str("iny   ");
                 1
             }
             0xc9 => {
-                self.dis_line.push_str("CMP");
+                self.dis_line.push_str("cmp   ");
                 self.read_operand(mem) + 1
             }
             0xca => {
-                self.dis_line.push_str("DEX");
+                self.dis_line.push_str("dex   ");
                 1
             }
             0xcc => {
-                self.dis_line.push_str("CPY");
+                self.dis_line.push_str("cpy   ");
                 self.read_operand(mem) + 1
             }
             0xcd => {
-                self.dis_line.push_str("CMP");
+                self.dis_line.push_str("cmp   ");
                 self.read_operand(mem) + 1
             }
             0xce => {
-                self.dis_line.push_str("DEC");
+                self.dis_line.push_str("dec   ");
                 self.read_operand(mem) + 1
             }
 
             0xd0 => {
-                self.dis_line.push_str("BNE");
-                self.read_operand(mem) + 1
+                self.dis_line.push_str("bne   ");
+                self.branch(mem, inst_addr) + 1
             }
             0xd1 => {
-                self.dis_line.push_str("CMP");
+                self.dis_line.push_str("cmp   ");
                 self.read_operand(mem) + 1
             }
             0xd5 => {
-                self.dis_line.push_str("CMP");
+                self.dis_line.push_str("cmp   ");
                 self.read_operand(mem) + 1
             }
             0xd6 => {
-                self.dis_line.push_str("DEC");
+                self.dis_line.push_str("dec   ");
                 self.read_operand(mem) + 1
             }
             0xd8 => {
-                self.dis_line.push_str("CLD");
+                self.dis_line.push_str("cld   ");
                 1
             }
             0xd9 => {
-                self.dis_line.push_str("CMP");
+                self.dis_line.push_str("cmp   ");
                 self.read_operand(mem) + 1
             }
             0xdd => {
-                self.dis_line.push_str("CMP");
+                self.dis_line.push_str("cmp   ");
                 self.read_operand(mem) + 1
             }
             0xde => {
-                self.dis_line.push_str("DEC");
+                self.dis_line.push_str("dec   ");
                 self.read_operand(mem) + 1
             }
 
             0xe0 => {
-                self.dis_line.push_str("CPX");
+                self.dis_line.push_str("cpx   ");
                 self.read_operand(mem) + 1
             }
             0xe1 => {
-                self.dis_line.push_str("SBC");
+                self.dis_line.push_str("sbc   ");
                 self.read_operand(mem) + 1
             }
             0xe4 => {
-                self.dis_line.push_str("CPX");
+                self.dis_line.push_str("cpx   ");
                 self.read_operand(mem) + 1
             }
             0xe5 => {
-                self.dis_line.push_str("SBC");
+                self.dis_line.push_str("sbc   ");
                 self.read_operand(mem) + 1
             }
             0xe6 => {
-                self.dis_line.push_str("INC");
+                self.dis_line.push_str("inc   ");
                 self.read_operand(mem) + 1
             }
             0xe8 => {
-                self.dis_line.push_str("INX");
+                self.dis_line.push_str("inx   ");
                 1
             }
             0xe9 => {
-                self.dis_line.push_str("SBC");
+                self.dis_line.push_str("sbc   ");
                 self.read_operand(mem) + 1
             }
             0xea => {
-                self.dis_line.push_str("NOP");
+                self.dis_line.push_str("nop   ");
                 1
             }
             0xec => {
-                self.dis_line.push_str("CPX");
+                self.dis_line.push_str("cpx   ");
                 self.read_operand(mem) + 1
             }
             0xed => {
-                self.dis_line.push_str("SBC");
+                self.dis_line.push_str("sbc   ");
                 self.read_operand(mem) + 1
             }
             0xee => {
-                self.dis_line.push_str("INC");
+                self.dis_line.push_str("inc   ");
                 self.read_operand(mem) + 1
             }
 
             0xf0 => {
-                self.dis_line.push_str("BEQ");
-                self.read_operand(mem) + 1
+                self.dis_line.push_str("beq   ");
+                self.branch(mem, inst_addr) + 1
             }
             0xf1 => {
-                self.dis_line.push_str("SBC");
+                self.dis_line.push_str("sbc   ");
                 self.read_operand(mem) + 1
             }
             0xf5 => {
-                self.dis_line.push_str("SBC");
+                self.dis_line.push_str("sbc   ");
                 self.read_operand(mem) + 1
             }
             0xf6 => {
-                self.dis_line.push_str("INC");
+                self.dis_line.push_str("inc   ");
                 self.read_operand(mem) + 1
             }
             0xf8 => {
-                self.dis_line.push_str("SED");
+                self.dis_line.push_str("sed   ");
                 1
             }
             0xf9 => {
-                self.dis_line.push_str("SBC");
+                self.dis_line.push_str("sbc   ");
                 self.read_operand(mem) + 1
             }
             0xfd => {
-                self.dis_line.push_str("SBC");
+                self.dis_line.push_str("sbc   ");
                 self.read_operand(mem) + 1
             }
             0xfe => {
-                self.dis_line.push_str("INC");
+                self.dis_line.push_str("inc   ");
                 self.read_operand(mem) + 1
             }
             _ => {
@@ -659,21 +659,41 @@ impl Debugger {
             }
         }
     }
-
+    fn branch(&mut self, mem: &[u8], mut inst_addr: u16) -> u8 {
+        let offset = mem[1] as i8;
+        inst_addr += 2;
+        let target = inst_addr.wrapping_add_signed(offset as i16);
+        let sym = self.symbol_lookup(target);
+        self.dis_line.push_str(&format!("{}", sym));
+        1
+    }
     fn operand_addr(&mut self, mem: &[u8]) -> u8 {
         // calculate the address of operand plus pc delta
         let inst = mem[0];
+        if inst == 0x20 {
+            //jsr
+            let lo = mem[1] as u16;
+            let hi = mem[2] as u16;
+            let addr = (hi << 8) | lo;
+            let sym = self.symbol_lookup(addr);
+            self.dis_line.push_str(&sym);
+            return 2;
+        }
         let operand = match inst & 0b00011100 {
             0b000_001_00 => {
                 // zero page
-                self.dis_line.push_str(&format!("${:02X} ", mem[1]));
+                let lo = mem[1];
+                let sym = self.zp_symbol_lookup(lo);
+                self.dis_line.push_str(&sym);
                 1
             }
             0b000_011_00 => {
                 // absolute
                 let lo = mem[1] as u16;
                 let hi = mem[2] as u16;
-                self.dis_line.push_str(&format!("${:02X}{:02X}", hi, lo));
+                let addr = (hi << 8) | lo;
+                let sym = self.symbol_lookup(addr);
+                self.dis_line.push_str(&sym);
                 2
             }
             0b000_101_00 => {
@@ -698,18 +718,17 @@ impl Debugger {
             }
             0b000_100_00 => {
                 // (ind),y
-                let zpaddr = mem[1] as u16;
+                let zpaddr = mem[1];
+                let sym = self.zp_symbol_lookup(zpaddr);
 
-                //let lo = self.read(zpaddr) as u16;
-                //let hi = self.read(zpaddr + 1) as u16;
-                self.dis_line.push_str(&format!("(${:02X}),Y", zpaddr));
+                self.dis_line.push_str(&format!("({}),Y", sym));
                 1
             }
             0b000_000_00 => {
                 // (ind,x)
-                let zpaddr = mem[1] as u16;
-
-                self.dis_line.push_str(&format!("(${:02X},X)", zpaddr));
+                let zpaddr = mem[1];
+                let sym = self.zp_symbol_lookup(zpaddr);
+                self.dis_line.push_str(&format!("({},X)", sym));
                 1
             }
             _ => panic!("Unknown addr format: {:02X}", inst),
@@ -719,8 +738,9 @@ impl Debugger {
     fn abs_y(&mut self, mem: &[u8]) -> u8 {
         let lo = mem[1] as u16;
         let hi = mem[2] as u16;
-
-        self.dis_line.push_str(&format!("${:02X}{:02X},Y", hi, lo));
+        let addr = (hi << 8) | lo;
+        let sym = self.symbol_lookup(addr);
+        self.dis_line.push_str(&format!("{},Y", sym));
         2
     }
     fn abs_x(&mut self, mem: &[u8]) -> u8 {
@@ -743,19 +763,27 @@ impl Debugger {
         1
     }
 }
-#[test  ]
+#[test]
 fn test_dis() {
     let mut dbg = Debugger::new();
     let mem = vec![0x00, 0x01, 0x02];
     let len = dbg.dis(&mem);
     assert_eq!(len, 1);
-    assert_eq!(dbg.dis_line, "BRK");
+    assert_eq!(dbg.dis_line, "brk   ");
 }
-#[test  ]
+#[test]
 fn test_dis_ora() {
     let mut dbg = Debugger::new();
     let mem = vec![0x01, 0x01, 0x02];
     let len = dbg.dis(&mem);
     assert_eq!(len, 2);
-    assert_eq!(dbg.dis_line, "ORA #${:02X} ");
+    assert_eq!(dbg.dis_line, "ora   ($01,X)");
+}
+#[test]
+fn test_jsr() {
+    let mut dbg = Debugger::new();
+    let mem = vec![0x20, 0x01, 0x02];
+    let len = dbg.dis(&mem);
+    assert_eq!(len, 3);
+    assert_eq!(dbg.dis_line, "jsr   $0201");
 }

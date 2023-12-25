@@ -4,11 +4,14 @@ use clap::Command;
 use clap::{Arg, Parser};
 
 use rustyline::error::ReadlineError;
+use rustyline::history::History;
 use rustyline::DefaultEditor;
 use std::path::Path;
 
 pub struct Shell {
     debugger: Debugger,
+    current_dis_addr: u16,
+    current_mem_addr: u16,
 }
 
 #[derive(Debug, Parser, Default)]
@@ -26,6 +29,8 @@ impl Shell {
     pub fn new() -> Self {
         Self {
             debugger: Debugger::new(),
+            current_dis_addr: 0,
+            current_mem_addr: 0,
         }
     }
     pub fn shell(&mut self) -> Result<()> {
@@ -35,14 +40,20 @@ impl Shell {
         if rl.load_history("history.txt").is_err() {
             println!("No previous history.");
         }
-
+        let mut lastinput = String::new();
         loop {
             let readline = rl.readline(">> ");
 
             match readline {
-                Ok(line) => {
-                    rl.add_history_entry(line.as_str())?;
-
+                Ok(mut line) => {
+                    if line.is_empty() {
+                        line = lastinput.clone();
+                    } else {
+                        //self.current_dis_addr = 0;
+                        //self.current_mem_addr = 0;
+                        rl.add_history_entry(line.as_str())?;
+                        lastinput = line.clone();
+                    };
                     match self.dispatch(&line) {
                         Err(e) => println!("{}", e),
                         Ok(true) => break,
@@ -103,7 +114,7 @@ impl Shell {
         match matches.subcommand() {
             Some(("break", args)) => {
                 if let Some(addr) = args.get_one::<String>("address") {
-                    self.debugger.set_break(&addr);
+                    self.debugger.set_break(&addr)?;
                 } else {
                     let blist = self.debugger.get_breaks();
                     for i in 0..blist.len() {
@@ -145,6 +156,36 @@ impl Shell {
                 self.debugger.next()?;
                 // println!("run {}", addr);
             }
+            Some(("step", args)) => {
+                // let addr = args.get_one::<String>("address").unwrap();
+                // self.debugger.step()?;
+                // println!("run {}", addr);
+            }
+            Some(("dis", args)) => {
+                let mut addr = if let Some(addr_str) = args.get_one::<String>("address") {
+                    self.debugger.convert_addr(&addr_str)?
+                } else {
+                    let mut a = self.current_dis_addr;
+                    if a == 0 {
+                        a = self.debugger.read_pc();
+                    }
+
+                    a
+                };
+                self.current_dis_addr = addr;
+                for i in 0..10 {
+                    let chunk = self.debugger.get_chunk(addr, 3)?;
+                    let delta = self.debugger.dis(&chunk, addr);
+                    let addr_str = self.debugger.symbol_lookup(addr);
+                    if addr_str.chars().next().unwrap() == '.' {
+                        println!("{}:", addr_str);
+                    }
+                    println!("{:04x}:       {}", addr, self.debugger.dis_line);
+                    addr += delta as u16;
+                    self.current_dis_addr = addr;
+                }
+            }
+
             Some((name, _matches)) => unimplemented!("{name}"),
             None => unreachable!("subcommand required"),
         }
