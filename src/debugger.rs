@@ -12,6 +12,7 @@ pub struct Debugger {
     pub break_points: HashMap<u16, BreakPoint>,
     loader_sp: u8,
     loader_start: u16,
+    pub(crate) dis_line: String,
 }
 pub struct BreakPoint {
     addr: u16,
@@ -26,6 +27,7 @@ impl Debugger {
             break_points: HashMap::new(),
             loader_sp: 0,
             loader_start: 0,
+            dis_line: String::new(),
         }
     }
     pub fn set_break(&mut self, addr_str: &str) -> Result<()> {
@@ -127,10 +129,36 @@ impl Debugger {
         Ok(())
     }
     pub fn run(&mut self) -> Result<()> {
-        //  Sim::write_sp(self.loader_sp);
         Sim::write_word(0xFFFC, self.loader_start);
         Sim::reset();
         self.core_run()?;
         Ok(())
+    }
+    pub fn get_chunk(&self, addr: u16, len: u16) -> Result<Vec<u8>> {
+        let mut v = Vec::new();
+        //let addr = self.convert_addr(addr_str)?;
+        for i in 0..len {
+            v.push(Sim::read_byte(addr + i));
+        }
+        Ok(v)
+    }
+    pub fn convert_addr(&self, addr_str: &str) -> Result<u16> {
+        if let Some(sym) = self.symbols.get(addr_str) {
+            return Ok(*sym);
+        }
+
+        if addr_str.chars().next().unwrap() == '$' {
+            let rest = addr_str[1..].to_string();
+            return Ok(u16::from_str_radix(&rest, 16)?);
+        }
+        Ok(u16::from_str_radix(addr_str, 10)?)
+    }
+    pub fn symbol_lookup(&self, addr: u16) -> String {
+        for (name, sym_addr) in &self.symbols {
+            if *sym_addr == addr {
+                return name.to_string();
+            }
+        }
+        format!("{:04x}", addr)
     }
 }

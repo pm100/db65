@@ -2,7 +2,7 @@ use core::panic;
 use std::{
     collections::HashMap,
     fs::{File, OpenOptions},
-    io::{self, Read, Write},
+    io::{self, stderr, stdout, Read, Write},
 };
 
 use once_cell::sync::Lazy;
@@ -157,8 +157,17 @@ impl ParaVirt {
             buf[i as usize] = Sim::read_byte(addr + i as u16);
         }
         let res = match fd {
-            1 => std::io::stdout().write(&buf).unwrap(),
-            2 => std::io::stderr().write(&buf).unwrap(),
+            1 => {
+                let count = stdout().write(&buf).unwrap();
+                stdout().flush().unwrap();
+                count
+            }
+            2 => {
+                let count = stderr().write(&buf).unwrap();
+                stderr().flush().unwrap();
+                count
+            }
+
             _ => unsafe {
                 let mut file = PV_FILES.get(&fd).unwrap();
                 file.write(&buf).unwrap()

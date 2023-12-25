@@ -43,8 +43,10 @@ impl Shell {
                 Ok(line) => {
                     rl.add_history_entry(line.as_str())?;
 
-                    if let Err(e) = self.dispatch(&line) {
-                        println!("{}", e);
+                    match self.dispatch(&line) {
+                        Err(e) => println!("{}", e),
+                        Ok(true) => break,
+                        Ok(false) => {}
                     }
                 }
                 Err(ReadlineError::Interrupted) => {
@@ -122,10 +124,11 @@ impl Shell {
                 return Ok(true);
             }
             Some(("memory", args)) => {
-                let addr = args.get_one::<String>("address").unwrap();
-                // let addr = u16::from_str_radix(&addr[1..], 16).unwrap();
-                let string = args.get_one::<bool>("string").is_some();
-                println!("memory {} {}", addr, string);
+                let addr_str = args.get_one::<String>("address").unwrap();
+                let addr = self.debugger.convert_addr(&addr_str)?;
+                let chunk = self.debugger.get_chunk(addr, 48)?;
+                self.mem_dump(addr, &chunk);
+                //println!("memory {} {}", addr, string);
             }
             Some(("run", args)) => {
                 // let addr = args.get_one::<String>("address").unwrap();
@@ -148,7 +151,27 @@ impl Shell {
 
         Ok(false)
     }
-
+    fn mem_dump(&mut self, mut addr: u16, chunk: &[u8]) {
+        //let mut addr = 0;
+        let mut line = String::new();
+        for i in 0..chunk.len() {
+            if i % 16 == 0 {
+                if i > 0 {
+                    println!("{}", line);
+                    line.clear();
+                }
+                print!("{:04x}: ", addr);
+            }
+            print!("{:02x} ", chunk[i]);
+            if chunk[i] >= 32 && chunk[i] < 127 {
+                line.push(chunk[i] as char);
+            } else {
+                line.push('.');
+            }
+            addr += 1;
+        }
+        println!("{}", line);
+    }
     fn syntax(&self) -> Command {
         // strip out usage
         const PARSER_TEMPLATE: &str = "\
@@ -205,7 +228,7 @@ impl Shell {
             )
             .subcommand(
                 Command::new("quit")
-                    .alias("exit")
+                    .aliases(["exit", "q"])
                     .about("Quit db65")
                     .help_template(APPLET_TEMPLATE),
             )
@@ -232,9 +255,6 @@ impl Shell {
                     .aliases(["mem", "m"])
                     .about("display memory")
                     .arg(Arg::new("address").required(true))
-                    .arg(
-                        Arg::new("string").short('s').long("string").num_args(0), // .takes_value(false),
-                    )
                     .help_template(APPLET_TEMPLATE),
             )
     }

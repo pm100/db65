@@ -1,5 +1,6 @@
 mod cpu;
 mod debugger;
+mod dis;
 mod execute;
 mod loader;
 mod paravirt;
