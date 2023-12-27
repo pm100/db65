@@ -1,4 +1,5 @@
 use anyhow::{bail, Result};
+#[derive(Debug, Clone)]
 pub enum StopReason {
     BreakPoint(u16),
     Exit(u8),
@@ -6,8 +7,10 @@ pub enum StopReason {
     Next,
     Bug(BugType),
 }
+#[derive(Debug, Clone)]
 pub enum BugType {
     SpMismatch,
+    Memcheck(u16),
     Stack,
     StackFrame,
     StackFrameJsr,
@@ -80,7 +83,12 @@ impl Debugger {
                 _ => {}
             };
             self.ticks += Sim::execute_insn() as usize;
-
+            if self.enable_mem_check {
+                if let Some(addr) = Sim::get_memcheck() {
+                    Sim::clear_memcheck();
+                    break StopReason::Bug(BugType::Memcheck(addr));
+                }
+            }
             if counting {
                 count -= 1;
                 if count == 0 {

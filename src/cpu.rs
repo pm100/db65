@@ -8,6 +8,7 @@ static mut THECPU: Cpu = Cpu {
     sp65_addr: 0,
     exit: false,
     exit_code: 0,
+    memcheck: None,
 };
 struct Cpu {
     ram: [u8; 65536],
@@ -17,6 +18,7 @@ struct Cpu {
     exit: bool,
     exit_code: u8,
     sp65_addr: u8,
+    memcheck: Option<u16>,
 }
 
 // our callable functions into sim65
@@ -44,6 +46,13 @@ extern "C" fn MemWriteByte(_addr: u32, _val: u8) {
 extern "C" fn MemReadWord(addr: u32) -> u32 {
     unsafe {
         let w = THECPU.read_word(addr as u16) as u32;
+        if THECPU.shadow[addr as usize] == 0 {
+            //println!("MemReadByte {:04x} = {:02x}", addr, b);
+            THECPU.memcheck = Some(addr as u16);
+        } else if THECPU.shadow[(addr + 1) as usize] == 0 {
+            //println!("MemReadByte {:04x} = {:02x}", addr, b);
+            THECPU.memcheck = Some(addr as u16 + 1);
+        }
         //   println!("MemReadWord {:04x} = {:04x}", addr, w);
         w
     }
@@ -53,7 +62,8 @@ extern "C" fn MemReadByte(addr: u32) -> u8 {
     unsafe {
         let b = THECPU.read_byte(addr as u16);
         if THECPU.shadow[addr as usize] == 0 {
-            println!("MemReadByte {:04x} = {:02x}", addr, b);
+            //println!("MemReadByte {:04x} = {:02x}", addr, b);
+            THECPU.memcheck = Some(addr as u16);
         }
         // println!("MemReadByte {:04x} = {:02x}", addr, b);
         b
@@ -102,6 +112,14 @@ impl Sim {
     pub fn sp65_addr(v: u8) {
         unsafe {
             THECPU.sp65_addr = v;
+        }
+    }
+    pub fn get_memcheck() -> Option<u16> {
+        unsafe { THECPU.memcheck }
+    }
+    pub fn clear_memcheck() {
+        unsafe {
+            THECPU.memcheck = None;
         }
     }
     pub fn set_exit(code: u8) {

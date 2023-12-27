@@ -223,7 +223,7 @@ impl Shell {
                 // println!("count");
             }
             StopReason::Bug(_) => {
-                println!("bug");
+                println!("bug {:?}", reason);
             }
         }
         let inst_addr = self.debugger.read_pc();

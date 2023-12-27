@@ -16,6 +16,7 @@ pub struct Debugger {
     pub(crate) ticks: usize,
     pub(crate) stack_frames: Vec<StackFrame>,
     pub(crate) enable_stack_check: bool,
+    pub(crate) enable_mem_check: bool,
 }
 #[derive(Debug)]
 pub(crate) enum FrameType {
@@ -46,6 +47,7 @@ impl Debugger {
             ticks: 0,
             stack_frames: Vec::new(),
             enable_stack_check: false,
+            enable_mem_check: false,
         }
     }
     pub fn set_break(&mut self, addr_str: &str, temp: bool) -> Result<()> {
@@ -89,7 +91,7 @@ impl Debugger {
                     let addr_str = spl.next().unwrap().trim_end();
                     let mut name = spl.next().unwrap().trim_end();
                     let addr = u16::from_str_radix(addr_str, 16).unwrap();
-                    println!("sym {} = {:04x}", name, addr);
+                    //println!("sym {} = {:04x}", name, addr);
                     self.symbols.insert(name.to_string(), addr);
                 }
             }
