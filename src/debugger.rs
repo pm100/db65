@@ -15,10 +15,11 @@ pub struct Debugger {
     pub(crate) dis_line: String,
     pub(crate) ticks: usize,
     pub(crate) stack_frames: Vec<StackFrame>,
+    pub(crate) enable_stack_check: bool,
 }
 #[derive(Debug)]
 pub(crate) enum FrameType {
-    Jsr((u16, u16)), // addr, return addr
+    Jsr((u16, u16, u8, u16)), // addr, return addr,sp,sp65
     Pha(u8),
     Php(u8),
 }
@@ -26,6 +27,7 @@ pub(crate) enum FrameType {
 pub struct StackFrame {
     pub(crate) frame_type: FrameType,
 }
+#[derive(Debug, Clone)]
 pub struct BreakPoint {
     pub(crate) addr: u16,
     pub(crate) symbol: String,
@@ -43,6 +45,7 @@ impl Debugger {
             dis_line: String::new(),
             ticks: 0,
             stack_frames: Vec::new(),
+            enable_stack_check: false,
         }
     }
     pub fn set_break(&mut self, addr_str: &str, temp: bool) -> Result<()> {
@@ -180,6 +183,45 @@ impl Debugger {
     }
     pub fn read_pc(&self) -> u16 {
         Sim::read_pc()
+    }
+    pub fn read_sp(&self) -> u8 {
+        Sim::read_sp()
+    }
+    pub fn read_ac(&self) -> u8 {
+        Sim::read_ac()
+    }
+    pub fn read_xr(&self) -> u8 {
+        Sim::read_xr()
+    }
+    pub fn read_yr(&self) -> u8 {
+        Sim::read_yr()
+    }
+    pub fn read_zr(&self) -> u8 {
+        Sim::read_zr()
+    }
+    pub fn read_sr(&self) -> u8 {
+        Sim::read_sr()
+    }
+    pub fn write_ac(&self, v: u8) {
+        Sim::write_ac(v);
+    }
+    pub fn write_xr(&self, v: u8) {
+        Sim::write_xr(v);
+    }
+    pub fn write_yr(&self, v: u8) {
+        Sim::write_yr(v);
+    }
+    pub fn write_zr(&self, v: u8) {
+        Sim::write_zr(v);
+    }
+    pub fn write_sr(&self, v: u8) {
+        Sim::write_sr(v);
+    }
+    pub fn write_sp(&self, v: u8) {
+        Sim::write_sp(v);
+    }
+    pub fn write_pc(&self, v: u16) {
+        Sim::write_pc(v);
     }
     pub fn read_stack(&self) -> &Vec<StackFrame> {
         &self.stack_frames

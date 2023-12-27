@@ -1,12 +1,22 @@
 use anyhow::{bail, Result};
 pub enum StopReason {
-    BreakPoint,
-    Exit,
+    BreakPoint(u16),
+    Exit(u8),
     Count,
+    Next,
+    Bug(BugType),
+}
+pub enum BugType {
+    SpMismatch,
+    Stack,
+    StackFrame,
+    StackFrameJsr,
+    StackFramePha,
+    StackFramePhp,
 }
 use crate::{
     cpu::Sim,
-    debugger::{Debugger, FrameType, StackFrame},
+    debugger::{BreakPoint, Debugger, FrameType, StackFrame},
 };
 impl Debugger {
     pub fn execute(&mut self, mut count: u16) -> Result<StopReason> {
@@ -20,15 +30,25 @@ impl Debugger {
                     // jsr
                     let lo = Sim::read_byte(pc + 1);
                     let hi = Sim::read_byte(pc + 2);
+                    let sp = Sim::read_sp();
+
                     let addr = lo as u16 | ((hi as u16) << 8);
                     self.stack_frames.push(StackFrame {
-                        frame_type: FrameType::Jsr((addr, pc + 1)),
+                        frame_type: FrameType::Jsr((addr, pc + 3, sp, 0)),
                     });
                 }
 
                 0x60 => {
                     // rts
                     let frame = self.stack_frames.pop().unwrap();
+                    let sp = Sim::read_sp();
+                    if self.enable_stack_check {
+                        if let FrameType::Jsr((addr, ret_addr, fsp, _)) = frame.frame_type {
+                            if sp + 2 != fsp {
+                                break StopReason::Bug(BugType::SpMismatch);
+                            }
+                        }
+                    }
                 }
                 0x68 => {
                     // pla
@@ -60,7 +80,7 @@ impl Debugger {
                 _ => {}
             };
             self.ticks += Sim::execute_insn() as usize;
-            let pc = Sim::read_pc();
+
             if counting {
                 count -= 1;
                 if count == 0 {
@@ -74,11 +94,11 @@ impl Debugger {
                 if bp.temp {
                     self.break_points.remove(&pc);
                 }
-                break StopReason::BreakPoint;
+                break StopReason::BreakPoint(pc);
             }
 
-            if Sim::exit_done() {
-                break StopReason::Exit;
+            if let Some(exit_code) = Sim::exit_done() {
+                break StopReason::Exit(exit_code);
             }
         };
         Ok(reason)

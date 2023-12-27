@@ -3,15 +3,19 @@ use std::os::raw::c_char;
 use crate::paravirt::ParaVirt;
 static mut THECPU: Cpu = Cpu {
     ram: [0; 65536],
+    shadow: [0; 65536],
     regs: std::ptr::null_mut(),
     sp65_addr: 0,
     exit: false,
+    exit_code: 0,
 };
 struct Cpu {
     ram: [u8; 65536],
+    shadow: [u8; 65536],
     // registers
     regs: *mut CPURegs,
     exit: bool,
+    exit_code: u8,
     sp65_addr: u8,
 }
 
@@ -32,6 +36,7 @@ extern "C" fn MemWriteByte(_addr: u32, _val: u8) {
     // println!("MemWriteByte {:04x} {:02x}", _addr, _val);
     unsafe {
         THECPU.write_byte(_addr as u16, _val);
+        THECPU.shadow[_addr as usize] = 1;
     }
 }
 
@@ -47,6 +52,9 @@ extern "C" fn MemReadWord(addr: u32) -> u32 {
 extern "C" fn MemReadByte(addr: u32) -> u8 {
     unsafe {
         let b = THECPU.read_byte(addr as u16);
+        if THECPU.shadow[addr as usize] == 0 {
+            println!("MemReadByte {:04x} = {:02x}", addr, b);
+        }
         // println!("MemReadByte {:04x} = {:02x}", addr, b);
         b
     }
@@ -96,17 +104,22 @@ impl Sim {
             THECPU.sp65_addr = v;
         }
     }
-    pub fn set_exit(_code: u8) {
+    pub fn set_exit(code: u8) {
         unsafe {
             THECPU.exit = true;
+            THECPU.exit_code = code;
         }
     }
     pub fn get_sp65_addr() -> u8 {
         unsafe { THECPU.sp65_addr }
     }
-    pub fn exit_done() -> bool {
+    pub fn exit_done() -> Option<u8> {
         unsafe {
-            return THECPU.exit;
+            return if THECPU.exit {
+                Some(THECPU.exit_code)
+            } else {
+                None
+            };
         }
     }
     pub fn reset() {
@@ -178,6 +191,7 @@ impl Sim {
     pub fn write_byte(addr: u16, val: u8) {
         unsafe {
             THECPU.write_byte(addr, val);
+            THECPU.shadow[addr as usize] = 1;
         }
     }
     pub fn write_word(addr: u16, val: u16) {

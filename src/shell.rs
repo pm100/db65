@@ -7,7 +7,10 @@ use clap::{Arg, Parser};
 use rustyline::error::ReadlineError;
 use rustyline::history::History;
 use rustyline::DefaultEditor;
-use std::path::Path;
+use std::collections::VecDeque;
+use std::fs::File;
+use std::io::Read;
+use std::path::{Path, PathBuf};
 
 pub struct Shell {
     debugger: Debugger,
@@ -23,12 +26,30 @@ impl Shell {
             current_mem_addr: 0,
         }
     }
-    pub fn shell(&mut self) -> Result<()> {
-        // `()` can be used when no completer is required
+    pub fn shell(&mut self, file: Option<PathBuf>) -> Result<u8> {
         let mut rl = DefaultEditor::new()?;
-        //#[cfg(feature = "with-file-history")]
+
         if rl.load_history("history.txt").is_err() {
-            println!("No previous history.");
+            // println!("No previous history.");
+        }
+
+        if let Some(f) = file {
+            let mut fd = File::open(f)?;
+            let mut commstr = String::new();
+            fd.read_to_string(&mut commstr)?;
+            let mut commands: VecDeque<String> =
+                commstr.split("\n").map(|s| s.to_string()).collect();
+            loop {
+                let line = commands.pop_front();
+                if line.is_none() {
+                    break;
+                }
+                match self.dispatch(&line.unwrap()) {
+                    Err(e) => println!("{}", e),
+                    Ok(true) => return Ok(0),
+                    Ok(false) => {}
+                }
+            }
         }
         let mut lastinput = String::new();
         loop {
@@ -66,7 +87,7 @@ impl Shell {
         }
         //ß #[cfg(feature = "with-file-history")]
         let _ = rl.save_history("history.txt");
-        Ok(())
+        Ok(0)
     }
 
     fn dispatch(&mut self, line: &str) -> Result<bool> {
@@ -128,7 +149,7 @@ impl Shell {
                 for i in (0..stack.len()).rev() {
                     let frame = &stack[i];
                     match frame.frame_type {
-                        Jsr((addr, ret)) => {
+                        Jsr((addr, ret, sp, _)) => {
                             println!("jsr {:<10} x{:04x}", self.debugger.symbol_lookup(addr), ret)
                         }
                         Pha(ac) => println!("pha x{:02x}", ac),
@@ -191,23 +212,32 @@ impl Shell {
     }
     fn stop(&mut self, reason: StopReason) {
         match reason {
-            StopReason::BreakPoint => {
+            StopReason::BreakPoint(_) => {
                 println!("breakpoint");
             }
-            StopReason::Exit => {
+            StopReason::Exit(_) => {
                 println!("exit");
+                return;
             }
-            StopReason::Count => {
-                println!("count");
+            StopReason::Count | StopReason::Next => {
+                // println!("count");
+            }
+            StopReason::Bug(_) => {
+                println!("bug");
             }
         }
         let inst_addr = self.debugger.read_pc();
         let mem = self.debugger.get_chunk(self.debugger.read_pc(), 3).unwrap();
         self.debugger.dis(&mem, inst_addr);
         println!(
-            "{:04x}:    {}",
+            "{:04x}:       {:<15} A={:02x} X={:02x} Y={:02x} SP={:02x} SR={:02x}",
             self.debugger.read_pc(),
-            self.debugger.dis_line
+            self.debugger.dis_line,
+            self.debugger.read_ac(),
+            self.debugger.read_xr(),
+            self.debugger.read_yr(),
+            self.debugger.read_sp(),
+            self.debugger.read_sr()
         );
     }
     fn syntax(&self) -> Command {

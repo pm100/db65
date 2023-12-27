@@ -37,7 +37,9 @@ pub fn load_code(file: &Path) -> Result<(u8, u16, u8, u16)> {
         if b.is_none() {
             break;
         }
+
         Sim::write_byte(load, b.unwrap()?);
+
         load += 1;
         count += 1;
     }
