@@ -1,21 +1,21 @@
-use crate::debugger::{Debugger, FrameType::*, StackFrame};
+use crate::debugger::{Debugger, FrameType::*};
 use crate::execute::StopReason;
 use anyhow::{anyhow, bail, Result};
+use clap::Arg;
 use clap::Command;
-use clap::{Arg, Parser};
 
 use rustyline::error::ReadlineError;
-use rustyline::history::History;
+
 use rustyline::DefaultEditor;
 use std::collections::VecDeque;
 use std::fs::File;
-use std::io::Read;
+use std::io::{ErrorKind, Read};
 use std::path::{Path, PathBuf};
 
 pub struct Shell {
     debugger: Debugger,
     current_dis_addr: u16,
-    current_mem_addr: u16,
+    _current_mem_addr: u16,
 }
 
 impl Shell {
@@ -23,18 +23,27 @@ impl Shell {
         Self {
             debugger: Debugger::new(),
             current_dis_addr: 0,
-            current_mem_addr: 0,
+            _current_mem_addr: 0,
         }
     }
-    pub fn shell(&mut self, file: Option<PathBuf>, args: Vec<String>) -> Result<u8> {
+    pub fn shell(&mut self, file: Option<PathBuf>, _args: Vec<String>) -> Result<u8> {
         let mut rl = DefaultEditor::new()?;
 
-        if rl.load_history("history.txt").is_err() {
-            // println!("No previous history.");
+        if let Err(e) = rl.load_history("history.txt") {
+            if let ReadlineError::Io(ref re) = e {
+                if re.kind() != ErrorKind::NotFound {
+                    println!("cannot open history {:?}", e);
+                }
+            } else {
+                println!("cannot open history {:?}", e);
+            }
         }
+
         // if let Some(args) = args {
         //self.debugger.cmd_args = args;
         //}
+
+        //do we have a command file to run?
         if let Some(f) = file {
             let mut fd = File::open(f)?;
             let mut commstr = String::new();
@@ -53,6 +62,8 @@ impl Shell {
                 }
             }
         }
+        // remeber the last line, replay it if user hits enter
+
         let mut lastinput = String::new();
         loop {
             let readline = rl.readline(">> ");
@@ -62,8 +73,6 @@ impl Shell {
                     if line.is_empty() {
                         line = lastinput.clone();
                     } else {
-                        //self.current_dis_addr = 0;
-                        //self.current_mem_addr = 0;
                         rl.add_history_entry(line.as_str())?;
                         lastinput = line.clone();
                     };
@@ -87,7 +96,7 @@ impl Shell {
                 }
             }
         }
-        //ß #[cfg(feature = "with-file-history")]
+
         let _ = rl.save_history("history.txt");
         Ok(0)
     }
@@ -124,16 +133,14 @@ impl Shell {
                 let addr = self.debugger.convert_addr(&addr_str)?;
                 let chunk = self.debugger.get_chunk(addr, 48)?;
                 self.mem_dump(addr, &chunk);
-                //println!("memory {} {}", addr, string);
             }
             Some(("run", args)) => {
-                println!(
-                    "'args' values: {:?}",
-                    args.get_many::<String>("args")
-                        .map(|vals| vals.collect::<Vec<_>>())
-                        .unwrap_or_default()
-                );
-                let reason = self.debugger.run()?;
+                let cmd_args = args
+                    .get_many::<String>("args")
+                    .map(|vals| vals.collect::<Vec<_>>())
+                    .unwrap_or_default();
+
+                let reason = self.debugger.run(cmd_args)?;
                 self.stop(reason);
             }
             Some(("go", _args)) => {
@@ -157,7 +164,7 @@ impl Shell {
                 for i in (0..stack.len()).rev() {
                     let frame = &stack[i];
                     match frame.frame_type {
-                        Jsr((addr, ret, sp, _)) => {
+                        Jsr((addr, ret, _sp, _)) => {
                             println!("jsr {:<10} x{:04x}", self.debugger.symbol_lookup(addr), ret)
                         }
                         Pha(ac) => println!("pha x{:02x}", ac),
@@ -178,7 +185,7 @@ impl Shell {
                     a
                 };
                 self.current_dis_addr = addr;
-                for i in 0..10 {
+                for _i in 0..10 {
                     let chunk = self.debugger.get_chunk(addr, 3)?;
                     let delta = self.debugger.dis(&chunk, addr);
                     let addr_str = self.debugger.symbol_lookup(addr);

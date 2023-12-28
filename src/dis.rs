@@ -1,6 +1,13 @@
+/*
+Disassembler portion of db65. Placed in a separate file for clarity
+*/
+
 use crate::debugger::Debugger;
 
 impl Debugger {
+    // reads one instruction and loads its interpretation into
+    // dis_line
+    // caller provides enough ram to cover the whole instruction
     pub fn dis(&mut self, mem: &[u8], inst_addr: u16) -> u8 {
         self.dis_line.clear();
         let inst = mem[0];
@@ -633,10 +640,11 @@ impl Debugger {
             }
         }
     }
-
+    // disassembles to operand of the instruction
     pub(crate) fn read_operand(&mut self, mem: &[u8]) -> u8 {
         let inst = mem[0];
         match inst {
+            /// this code deals with the non emory ones
             0x0a | 0x2a | 0x4a | 0x6a => {
                 // accumulator
                 self.dis_line.push_str("A");
@@ -655,11 +663,14 @@ impl Debugger {
                 return 1;
             }
             _ => {
+                // otherwise deal with memory
                 return self.operand_addr(mem);
             }
         }
     }
     fn branch(&mut self, mem: &[u8], mut inst_addr: u16) -> u8 {
+        // special case for branches.
+        // current pc is passed in so that destination absolute address can be calculated
         let offset = mem[1] as i8;
         inst_addr += 2;
         let target = inst_addr.wrapping_add_signed(offset as i16);
@@ -668,7 +679,7 @@ impl Debugger {
         1
     }
     fn operand_addr(&mut self, mem: &[u8]) -> u8 {
-        // calculate the address of operand plus pc delta
+        // disassemble the address of operand plus pc delta
         let inst = mem[0];
         if inst == 0x20 {
             //jsr

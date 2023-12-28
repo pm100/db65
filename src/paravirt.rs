@@ -2,7 +2,7 @@ use core::panic;
 use std::{
     collections::HashMap,
     fs::{File, OpenOptions},
-    io::{self, stderr, stdout, Read, Write},
+    io::{stderr, stdout, Read, Write},
 };
 
 use once_cell::sync::Lazy;
@@ -49,7 +49,7 @@ impl ParaVirt {
         let mut mode = Self::pop_arg(Cpu::read_yr() as u16 - 4);
         let flags = Self::pop_arg(2);
         let mut name = Self::pop_arg(2);
-        if (Cpu::read_yr() - 4 < 2) {
+        if Cpu::read_yr() - 4 < 2 {
             /* If the caller didn't supply the mode
              ** argument, use a reasonable default.
              */
@@ -103,7 +103,7 @@ impl ParaVirt {
         let fd = ParaVirt::pop_arg(2);
 
         let res = unsafe {
-            if let Some(file) = PV_FILES.get(&fd) {
+            if let Some(_file) = PV_FILES.get(&fd) {
                 PV_FILES.remove(&fd);
 
                 0
@@ -138,8 +138,6 @@ impl ParaVirt {
         Self::set_ax(res as u16);
     }
     fn pv_write() {
-        //     Regs->AC = write (Regs->AC, Mem + Regs->XR, Regs->YR);
-        //     Regs->XR = errno;
         let count = ParaVirt::get_ax();
         let addr = ParaVirt::pop_arg(2);
         let fd = ParaVirt::pop_arg(2);
@@ -165,7 +163,7 @@ impl ParaVirt {
                 file.write(&buf).unwrap()
             },
         };
-        //Cpu::set_exit(0);
+
         Self::set_ax(res as u16);
     }
     fn pv_args() {
@@ -178,7 +176,7 @@ impl ParaVirt {
         let mut arg_ptr_storage = sp65 - ((Cpu::get_arg_count() + 1) * 2) as u16;
         // store that address of argv table where caller asked for it
         Cpu::write_word(caller_arg_addr, arg_ptr_storage);
-
+        sp65 = arg_ptr_storage;
         // copy the host os arguments contents over
         // sp65 is decremented for each one
         for i in 0..Cpu::get_arg_count() {

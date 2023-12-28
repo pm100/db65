@@ -9,7 +9,7 @@ Its responsible for running the code . It detects
 
 It runs until it stops. It the returns a StopReason
 */
-use anyhow::{bail, Result};
+use anyhow::{Result};
 #[derive(Debug, Clone)]
 pub enum StopReason {
     BreakPoint(u16),
@@ -25,7 +25,7 @@ pub enum BugType {
 }
 use crate::{
     cpu::Cpu,
-    debugger::{BreakPoint, Debugger, FrameType, StackFrame},
+    debugger::{Debugger, FrameType, StackFrame},
 };
 impl Debugger {
     pub fn execute(&mut self, mut count: u16) -> Result<StopReason> {
@@ -52,7 +52,7 @@ impl Debugger {
                     let frame = self.stack_frames.pop().unwrap();
                     let sp = Cpu::read_sp();
                     if self.enable_stack_check {
-                        if let FrameType::Jsr((addr, ret_addr, fsp, _)) = frame.frame_type {
+                        if let FrameType::Jsr((_addr, _ret_addr, fsp, _)) = frame.frame_type {
                             if sp + 2 != fsp {
                                 break StopReason::Bug(BugType::SpMismatch);
                             }
@@ -61,7 +61,7 @@ impl Debugger {
                 }
                 0x68 => {
                     // pla
-                    let frame = self.stack_frames.pop().unwrap();
+                    let _frame = self.stack_frames.pop().unwrap();
                 }
                 0x48 => {
                     // pha
@@ -73,7 +73,7 @@ impl Debugger {
 
                 0x28 => {
                     // plp
-                    let frame = self.stack_frames.pop().unwrap();
+                    let _frame = self.stack_frames.pop().unwrap();
                 }
                 0x08 => {
                     // php
@@ -84,7 +84,7 @@ impl Debugger {
                 }
                 0x40 => {
                     // rti
-                    let frame = self.stack_frames.pop().unwrap();
+                    let _frame = self.stack_frames.pop().unwrap();
                 }
                 _ => {}
             };

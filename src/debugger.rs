@@ -25,6 +25,7 @@ pub struct Debugger {
     pub(crate) enable_stack_check: bool,
     pub(crate) enable_mem_check: bool,
     cmd_args: Vec<String>,
+    load_name: String,
 }
 #[derive(Debug)]
 pub(crate) enum FrameType {
@@ -57,10 +58,11 @@ impl Debugger {
             enable_stack_check: false,
             enable_mem_check: false,
             cmd_args: Vec::new(),
+            load_name: String::new(),
         }
     }
     pub fn set_break(&mut self, addr_str: &str, temp: bool) -> Result<()> {
-        let mut bp_addr;
+        let bp_addr;
         let sym = self.symbols.get(addr_str);
         let mut save_sym = String::new();
         if sym.is_some() {
@@ -97,7 +99,7 @@ impl Debugger {
                     let mut spl = line.split(" ");
                     let _al = spl.next();
                     let addr_str = spl.next().unwrap().trim_end();
-                    let mut name = spl.next().unwrap().trim_end();
+                    let name = spl.next().unwrap().trim_end();
                     let addr = u16::from_str_radix(addr_str, 16).unwrap();
                     self.symbols.insert(name.to_string(), addr);
                 }
@@ -106,12 +108,11 @@ impl Debugger {
         Ok(())
     }
     pub fn load_code(&mut self, file: &Path) -> Result<(u16, u16)> {
-        let (sp65_addr, run, cpu, size) = loader::load_code(file)?;
+        let (sp65_addr, run, _cpu, size) = loader::load_code(file)?;
         // println!("size={:x}, entry={:x}, cpu={}", size, run, cpu);
         Cpu::sp65_addr(sp65_addr);
         let arg0 = file.file_name().unwrap().to_str().unwrap().to_string();
-        self.cmd_args.clear();
-        self.cmd_args.push(arg0);
+        self.load_name = arg0;
         self.loader_start = run;
 
         Ok((size, run))
@@ -151,9 +152,13 @@ impl Debugger {
     fn core_run(&mut self) -> Result<StopReason> {
         self.execute(0) // 0 = forever
     }
-    pub fn run(&mut self) -> Result<StopReason> {
+    pub fn run(&mut self, cmd_args: Vec<&String>) -> Result<StopReason> {
         Cpu::write_word(0xFFFC, self.loader_start);
         Cpu::reset();
+        Cpu::push_arg(&self.load_name);
+        for i in 0..cmd_args.len() {
+            Cpu::push_arg(&cmd_args[i])
+        }
         self.stack_frames.clear();
         self.core_run()
     }

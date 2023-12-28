@@ -96,19 +96,19 @@ extern "C" fn MemReadZPWord(mut addr: u8) -> u16 {
     }
 }
 #[no_mangle]
-extern "C" fn Warning(_format: *const c_char, x: u32, y: u32) -> u32 {
+extern "C" fn Warning(_format: *const c_char, _x: u32, _y: u32) -> u32 {
     println!("Warning");
     return 0;
 }
 #[no_mangle]
-extern "C" fn Error(_format: *const c_char, x: u32, y: u32) -> u32 {
+extern "C" fn Error(_format: *const c_char, _x: u32, _y: u32) -> u32 {
     println!("Error");
     return 0;
 }
 #[no_mangle]
 
 extern "C" fn ParaVirtHooks(_regs: *mut CPURegs) {
-    let pc = Cpu::read_pc();
+    let _pc = Cpu::read_pc();
     ParaVirt::pv_hooks();
 }
 #[repr(C)]
@@ -135,6 +135,11 @@ impl Cpu {
     }
     pub fn get_arg(i: u8) -> &'static str {
         unsafe { THECPU.arg_array[i as usize].as_str() }
+    }
+    pub fn push_arg(v: &String) {
+        unsafe {
+            THECPU.arg_array.push(v.clone());
+        }
     }
     pub fn get_memcheck() -> Option<u16> {
         unsafe { THECPU.memcheck }
@@ -166,6 +171,7 @@ impl Cpu {
         unsafe {
             THECPU.regs = ReadRegisters();
             THECPU.exit = false;
+            THECPU.arg_array.clear();
             Reset();
         }
     }
