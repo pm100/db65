@@ -26,13 +26,15 @@ impl Shell {
             current_mem_addr: 0,
         }
     }
-    pub fn shell(&mut self, file: Option<PathBuf>) -> Result<u8> {
+    pub fn shell(&mut self, file: Option<PathBuf>, args: Vec<String>) -> Result<u8> {
         let mut rl = DefaultEditor::new()?;
 
         if rl.load_history("history.txt").is_err() {
             // println!("No previous history.");
         }
-
+        // if let Some(args) = args {
+        //self.debugger.cmd_args = args;
+        //}
         if let Some(f) = file {
             let mut fd = File::open(f)?;
             let mut commstr = String::new();
@@ -125,6 +127,12 @@ impl Shell {
                 //println!("memory {} {}", addr, string);
             }
             Some(("run", args)) => {
+                println!(
+                    "'args' values: {:?}",
+                    args.get_many::<String>("args")
+                        .map(|vals| vals.collect::<Vec<_>>())
+                        .unwrap_or_default()
+                );
                 let reason = self.debugger.run()?;
                 self.stop(reason);
             }
@@ -286,6 +294,7 @@ impl Shell {
                 Command::new("run")
                     .about("run code")
                     .arg(Arg::new("address"))
+                    .arg(Arg::new("args").last(true).num_args(0..))
                     .help_template(APPLET_TEMPLATE),
             )
             .subcommand(

@@ -7,12 +7,9 @@ use std::{
 
 use once_cell::sync::Lazy;
 
-use crate::cpu::Sim;
-static mut PV_FILES: Lazy<HashMap<u16, File>> = Lazy::new(|| {
-    println!("initializing");
-    HashMap::new()
-});
-//static PV_FILES: HashMap<u16, File>;
+use crate::cpu::Cpu;
+static mut PV_FILES: Lazy<HashMap<u16, File>> = Lazy::new(|| HashMap::new());
+
 static PV_HOOKS: [fn(); 6] = [
     ParaVirt::pv_open,
     ParaVirt::pv_close,
@@ -24,40 +21,35 @@ static PV_HOOKS: [fn(); 6] = [
 const PARAVIRT_BASE: u16 = 0xFFF4;
 pub struct ParaVirt;
 impl ParaVirt {
-    pub fn pv_init() {}
+    pub fn _pv_init() {}
     fn pop_arg(incr: u16) -> u16 {
-        let sp65_addr = Sim::get_sp65_addr();
-        let sp65 = Sim::read_word(sp65_addr as u16);
-        let val = Sim::read_word(sp65);
-        Sim::write_word(sp65_addr as u16, sp65 + incr);
+        let sp65_addr = Cpu::get_sp65_addr();
+        let sp65 = Cpu::read_word(sp65_addr as u16);
+        let val = Cpu::read_word(sp65);
+        Cpu::write_word(sp65_addr as u16, sp65 + incr);
         val
     }
     fn pop() -> u8 {
-        //  return MemReadByte (0x0100 + (++Regs->SP & 0xFF));
-        let sp = Sim::read_sp();
+        let sp = Cpu::read_sp();
         let newsp = sp.wrapping_add(1);
-        let val = Sim::read_byte(0x0100 | newsp as u16);
-        Sim::write_sp(newsp);
+        let val = Cpu::read_byte(0x0100 | newsp as u16);
+        Cpu::write_sp(newsp);
         val
     }
     fn set_ax(val: u16) {
-        //     Regs->AC = Val & 0xFF;
-        //     Val >>= 8;
-        //     Regs->XR = Val;
-        Sim::write_ac(val as u8);
-        Sim::write_xr(((val >> 8) & 0xff) as u8);
+        Cpu::write_ac(val as u8);
+        Cpu::write_xr(((val >> 8) & 0xff) as u8);
     }
     fn get_ax() -> u16 {
-        // return Regs->AC + (Regs->XR << 8);load tes
-        let ac = Sim::read_ac() as u16;
-        let xr = Sim::read_xr() as u16;
+        let ac = Cpu::read_ac() as u16;
+        let xr = Cpu::read_xr() as u16;
         ac | (xr << 8)
     }
     fn pv_open() {
-        let mut mode = Self::pop_arg(Sim::read_yr() as u16 - 4);
+        let mut mode = Self::pop_arg(Cpu::read_yr() as u16 - 4);
         let flags = Self::pop_arg(2);
         let mut name = Self::pop_arg(2);
-        if (Sim::read_yr() - 4 < 2) {
+        if (Cpu::read_yr() - 4 < 2) {
             /* If the caller didn't supply the mode
              ** argument, use a reasonable default.
              */
@@ -66,7 +58,7 @@ impl ParaVirt {
         let mut name_buf = Vec::new();
 
         loop {
-            let c = Sim::read_byte(name);
+            let c = Cpu::read_byte(name);
             if c == 0 {
                 break;
             }
@@ -141,7 +133,7 @@ impl ParaVirt {
         };
 
         for i in 0..res {
-            Sim::write_byte(addr + i as u16, buf[i as usize]);
+            Cpu::write_byte(addr + i as u16, buf[i as usize]);
         }
         Self::set_ax(res as u16);
     }
@@ -154,7 +146,7 @@ impl ParaVirt {
 
         let mut buf = vec![0; count as usize];
         for i in 0..count {
-            buf[i as usize] = Sim::read_byte(addr + i as u16);
+            buf[i as usize] = Cpu::read_byte(addr + i as u16);
         }
         let res = match fd {
             1 => {
@@ -173,28 +165,48 @@ impl ParaVirt {
                 file.write(&buf).unwrap()
             },
         };
-        //Sim::set_exit(0);
+        //Cpu::set_exit(0);
         Self::set_ax(res as u16);
     }
     fn pv_args() {
-        //     Regs->AC = argc;
-        //     Regs->XR = argv;
-        //     Regs->YR = envp;
-        // let argc = Sim::argc();
-        // let argv = Sim::argv();
-        // let envp = Sim::envp();
-        // ParaVirt::set_ax(argc);
-        // ParaVirt::set_ax(argv);
-        // ParaVirt::set_ax(envp);
+        // where the caller wants the pointer to arg array
+        let caller_arg_addr = Self::get_ax();
+        let sp65_addr = Cpu::get_sp65_addr() as u16;
+        let mut sp65 = Cpu::read_word(sp65_addr);
+        let argcount = Cpu::get_arg_count() as u16;
+        // points to array of pointers to argv[n]
+        let mut arg_ptr_storage = sp65 - ((Cpu::get_arg_count() + 1) * 2) as u16;
+        // store that address of argv table where caller asked for it
+        Cpu::write_word(caller_arg_addr, arg_ptr_storage);
+
+        // copy the host os arguments contents over
+        // sp65 is decremented for each one
+        for i in 0..Cpu::get_arg_count() {
+            let current_arg = Cpu::get_arg(i);
+            let arg_len = current_arg.len() as u16;
+            sp65 -= arg_len + 1;
+            let bytes = current_arg.as_bytes();
+            for j in 0..arg_len {
+                Cpu::write_byte(sp65 + j, bytes[j as usize]);
+            }
+            Cpu::write_byte(sp65 + arg_len, 0);
+            Cpu::write_word(arg_ptr_storage, sp65);
+            arg_ptr_storage += 2;
+        }
+
+        Cpu::write_word(arg_ptr_storage, sp65_addr);
+
+        Cpu::write_word(sp65_addr, sp65);
+        Self::set_ax(argcount);
     }
     fn pv_exit() {
         //     exit (Regs->AC);
         let code = ParaVirt::pop();
-        Sim::set_exit(code);
+        Cpu::set_exit(code);
     }
 
     pub fn pv_hooks() {
-        let pc = Sim::read_pc();
+        let pc = Cpu::read_pc();
         if pc < PARAVIRT_BASE || pc >= PARAVIRT_BASE + PV_HOOKS.len() as u16 {
             return;
         }
@@ -203,6 +215,6 @@ impl ParaVirt {
         PV_HOOKS[(pc - PARAVIRT_BASE) as usize]();
         let lo = Self::pop();
         let hi = Self::pop();
-        Sim::write_pc((lo as u16 | ((hi as u16) << 8)) + 1);
+        Cpu::write_pc((lo as u16 | ((hi as u16) << 8)) + 1);
     }
 }

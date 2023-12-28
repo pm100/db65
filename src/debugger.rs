@@ -1,22 +1,30 @@
+/*
+The debugger core. It sits on top of the Cpu wrapper that has all the unsafe code
+It does not do any ui. This allows for maybe a future gui to provide
+the same functionality as the cli shell.
+
+*/
+
 use anyhow::Result;
 use std::{
-    collections::{HashMap, HashSet},
+    collections::HashMap,
     fs::File,
     io::{BufRead, BufReader},
     path::Path,
 };
 
-use crate::{cpu::Sim, execute::StopReason, loader};
+use crate::{cpu::Cpu, execute::StopReason, loader};
 pub struct Debugger {
     symbols: HashMap<String, u16>,
     pub break_points: HashMap<u16, BreakPoint>,
-    loader_sp: u8,
+    _loader_sp: u8,
     loader_start: u16,
     pub(crate) dis_line: String,
     pub(crate) ticks: usize,
     pub(crate) stack_frames: Vec<StackFrame>,
     pub(crate) enable_stack_check: bool,
     pub(crate) enable_mem_check: bool,
+    cmd_args: Vec<String>,
 }
 #[derive(Debug)]
 pub(crate) enum FrameType {
@@ -31,23 +39,24 @@ pub struct StackFrame {
 #[derive(Debug, Clone)]
 pub struct BreakPoint {
     pub(crate) addr: u16,
-    pub(crate) symbol: String,
-    pub(crate) number: u16,
+    pub(crate) _symbol: String,
+    pub(crate) _number: u16,
     pub(crate) temp: bool,
 }
 impl Debugger {
     pub fn new() -> Self {
-        Sim::reset();
+        Cpu::reset();
         Self {
             symbols: HashMap::new(),
             break_points: HashMap::new(),
-            loader_sp: 0,
+            _loader_sp: 0,
             loader_start: 0,
             dis_line: String::new(),
             ticks: 0,
             stack_frames: Vec::new(),
             enable_stack_check: false,
             enable_mem_check: false,
+            cmd_args: Vec::new(),
         }
     }
     pub fn set_break(&mut self, addr_str: &str, temp: bool) -> Result<()> {
@@ -69,17 +78,16 @@ impl Debugger {
             bp_addr,
             BreakPoint {
                 addr: bp_addr,
-                symbol: save_sym,
-                number: 42,
+                _symbol: save_sym,
+                _number: 0,
                 temp,
             },
         );
         Ok(())
     }
     pub fn load_ll(&mut self, file: &Path) -> Result<()> {
-        let f = File::open(file)?;
-        //let re = Regex::new("a")
-        let mut reader = BufReader::new(f);
+        let fd = File::open(file)?;
+        let mut reader = BufReader::new(fd);
         loop {
             let mut line = String::new();
             match reader.read_line(&mut line)? {
@@ -91,21 +99,22 @@ impl Debugger {
                     let addr_str = spl.next().unwrap().trim_end();
                     let mut name = spl.next().unwrap().trim_end();
                     let addr = u16::from_str_radix(addr_str, 16).unwrap();
-                    //println!("sym {} = {:04x}", name, addr);
                     self.symbols.insert(name.to_string(), addr);
                 }
             }
         }
         Ok(())
     }
-    pub fn load_code(&mut self, file: &Path) -> Result<()> {
+    pub fn load_code(&mut self, file: &Path) -> Result<(u16, u16)> {
         let (sp65_addr, run, cpu, size) = loader::load_code(file)?;
-        println!("size={:x}, entry={:x}, cpu={}", size, run, cpu);
-        Sim::sp65_addr(sp65_addr);
-
+        // println!("size={:x}, entry={:x}, cpu={}", size, run, cpu);
+        Cpu::sp65_addr(sp65_addr);
+        let arg0 = file.file_name().unwrap().to_str().unwrap().to_string();
+        self.cmd_args.clear();
+        self.cmd_args.push(arg0);
         self.loader_start = run;
 
-        Ok(())
+        Ok((size, run))
     }
     pub fn get_breaks(&self) -> Vec<u16> {
         self.break_points.iter().map(|bp| bp.1.addr).collect()
@@ -114,19 +123,19 @@ impl Debugger {
         self.core_run()
     }
     fn state(&self) {
-        println!("pc={:04x}", Sim::read_pc());
+        println!("pc={:04x}", Cpu::read_pc());
     }
     pub fn next(&mut self) -> Result<StopReason> {
-        let next_inst = Sim::read_byte(Sim::read_pc());
+        let next_inst = Cpu::read_byte(Cpu::read_pc());
         let reason = if next_inst == 0x20 {
             //jsr
-            let inst = Sim::read_pc() + 3;
+            let inst = Cpu::read_pc() + 3;
             self.break_points.insert(
                 inst,
                 BreakPoint {
                     addr: inst,
-                    symbol: String::new(),
-                    number: 42,
+                    _symbol: String::new(),
+                    _number: 0,
                     temp: true,
                 },
             );
@@ -143,8 +152,8 @@ impl Debugger {
         self.execute(0) // 0 = forever
     }
     pub fn run(&mut self) -> Result<StopReason> {
-        Sim::write_word(0xFFFC, self.loader_start);
-        Sim::reset();
+        Cpu::write_word(0xFFFC, self.loader_start);
+        Cpu::reset();
         self.stack_frames.clear();
         self.core_run()
     }
@@ -152,7 +161,7 @@ impl Debugger {
         let mut v = Vec::new();
         //let addr = self.convert_addr(addr_str)?;
         for i in 0..len {
-            v.push(Sim::read_byte(addr + i));
+            v.push(Cpu::read_byte(addr + i));
         }
         Ok(v)
     }
@@ -184,46 +193,46 @@ impl Debugger {
         format!("{:02x}", addr)
     }
     pub fn read_pc(&self) -> u16 {
-        Sim::read_pc()
+        Cpu::read_pc()
     }
     pub fn read_sp(&self) -> u8 {
-        Sim::read_sp()
+        Cpu::read_sp()
     }
     pub fn read_ac(&self) -> u8 {
-        Sim::read_ac()
+        Cpu::read_ac()
     }
     pub fn read_xr(&self) -> u8 {
-        Sim::read_xr()
+        Cpu::read_xr()
     }
     pub fn read_yr(&self) -> u8 {
-        Sim::read_yr()
+        Cpu::read_yr()
     }
     pub fn read_zr(&self) -> u8 {
-        Sim::read_zr()
+        Cpu::read_zr()
     }
     pub fn read_sr(&self) -> u8 {
-        Sim::read_sr()
+        Cpu::read_sr()
     }
     pub fn write_ac(&self, v: u8) {
-        Sim::write_ac(v);
+        Cpu::write_ac(v);
     }
     pub fn write_xr(&self, v: u8) {
-        Sim::write_xr(v);
+        Cpu::write_xr(v);
     }
     pub fn write_yr(&self, v: u8) {
-        Sim::write_yr(v);
+        Cpu::write_yr(v);
     }
     pub fn write_zr(&self, v: u8) {
-        Sim::write_zr(v);
+        Cpu::write_zr(v);
     }
     pub fn write_sr(&self, v: u8) {
-        Sim::write_sr(v);
+        Cpu::write_sr(v);
     }
     pub fn write_sp(&self, v: u8) {
-        Sim::write_sp(v);
+        Cpu::write_sp(v);
     }
     pub fn write_pc(&self, v: u16) {
-        Sim::write_pc(v);
+        Cpu::write_pc(v);
     }
     pub fn read_stack(&self) -> &Vec<StackFrame> {
         &self.stack_frames

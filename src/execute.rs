@@ -1,3 +1,14 @@
+/*
+core run code of the debugger.
+
+Its responsible for running the code . It detects
+- breakpoints
+- exit
+- next/step
+- bugs
+
+It runs until it stops. It the returns a StopReason
+*/
 use anyhow::{bail, Result};
 #[derive(Debug, Clone)]
 pub enum StopReason {
@@ -11,29 +22,24 @@ pub enum StopReason {
 pub enum BugType {
     SpMismatch,
     Memcheck(u16),
-    Stack,
-    StackFrame,
-    StackFrameJsr,
-    StackFramePha,
-    StackFramePhp,
 }
 use crate::{
-    cpu::Sim,
+    cpu::Cpu,
     debugger::{BreakPoint, Debugger, FrameType, StackFrame},
 };
 impl Debugger {
     pub fn execute(&mut self, mut count: u16) -> Result<StopReason> {
         let counting = count > 0;
         let reason = loop {
-            let pc = Sim::read_pc();
+            let pc = Cpu::read_pc();
             // is this a stack manipulation instruction?
-            let inst = Sim::read_byte(pc);
+            let inst = Cpu::read_byte(pc);
             match inst {
                 0x20 => {
                     // jsr
-                    let lo = Sim::read_byte(pc + 1);
-                    let hi = Sim::read_byte(pc + 2);
-                    let sp = Sim::read_sp();
+                    let lo = Cpu::read_byte(pc + 1);
+                    let hi = Cpu::read_byte(pc + 2);
+                    let sp = Cpu::read_sp();
 
                     let addr = lo as u16 | ((hi as u16) << 8);
                     self.stack_frames.push(StackFrame {
@@ -44,7 +50,7 @@ impl Debugger {
                 0x60 => {
                     // rts
                     let frame = self.stack_frames.pop().unwrap();
-                    let sp = Sim::read_sp();
+                    let sp = Cpu::read_sp();
                     if self.enable_stack_check {
                         if let FrameType::Jsr((addr, ret_addr, fsp, _)) = frame.frame_type {
                             if sp + 2 != fsp {
@@ -59,7 +65,7 @@ impl Debugger {
                 }
                 0x48 => {
                     // pha
-                    let ac = Sim::read_ac();
+                    let ac = Cpu::read_ac();
                     self.stack_frames.push(StackFrame {
                         frame_type: FrameType::Pha(ac),
                     });
@@ -71,7 +77,7 @@ impl Debugger {
                 }
                 0x08 => {
                     // php
-                    let sr = Sim::read_sr();
+                    let sr = Cpu::read_sr();
                     self.stack_frames.push(StackFrame {
                         frame_type: FrameType::Php(sr),
                     });
@@ -82,10 +88,10 @@ impl Debugger {
                 }
                 _ => {}
             };
-            self.ticks += Sim::execute_insn() as usize;
+            self.ticks += Cpu::execute_insn() as usize;
             if self.enable_mem_check {
-                if let Some(addr) = Sim::get_memcheck() {
-                    Sim::clear_memcheck();
+                if let Some(addr) = Cpu::get_memcheck() {
+                    Cpu::clear_memcheck();
                     break StopReason::Bug(BugType::Memcheck(addr));
                 }
             }
@@ -96,7 +102,7 @@ impl Debugger {
                 }
             }
             //  did we hit a breakpoint?
-            let pc = Sim::read_pc();
+            let pc = Cpu::read_pc();
             if let Some(bp) = self.break_points.get(&pc) {
                 // println!("breakpoint");
                 if bp.temp {
@@ -105,7 +111,7 @@ impl Debugger {
                 break StopReason::BreakPoint(pc);
             }
 
-            if let Some(exit_code) = Sim::exit_done() {
+            if let Some(exit_code) = Cpu::exit_done() {
                 break StopReason::Exit(exit_code);
             }
         };
