@@ -9,7 +9,7 @@ Its responsible for running the code . It detects
 
 It runs until it stops. It the returns a StopReason
 */
-use anyhow::{Result};
+use anyhow::Result;
 #[derive(Debug, Clone)]
 pub enum StopReason {
     BreakPoint(u16),
@@ -103,8 +103,14 @@ impl Debugger {
             }
             //  did we hit a breakpoint?
             let pc = Cpu::read_pc();
+            if let Some(next) = self.next_bp {
+                // next stepping bp
+                if next == pc {
+                    self.next_bp = None;
+                    break StopReason::Next;
+                }
+            }
             if let Some(bp) = self.break_points.get(&pc) {
-                // println!("breakpoint");
                 if bp.temp {
                     self.break_points.remove(&pc);
                 }

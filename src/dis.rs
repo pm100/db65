@@ -644,7 +644,7 @@ impl Debugger {
     pub(crate) fn read_operand(&mut self, mem: &[u8]) -> u8 {
         let inst = mem[0];
         match inst {
-            /// this code deals with the non emory ones
+            // this code deals with the non memory ones
             0x0a | 0x2a | 0x4a | 0x6a => {
                 // accumulator
                 self.dis_line.push_str("A");

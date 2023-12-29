@@ -17,7 +17,7 @@
 */
 
 use crate::paravirt::ParaVirt;
-use std::os::raw::c_char;
+use std::{fmt, os::raw::c_char};
 
 // the one cpu instance
 static mut THECPU: Cpu = Cpu {
@@ -287,4 +287,63 @@ fn regreadwrite() {
     assert_eq!(Cpu::read_sr(), 5);
     assert_eq!(Cpu::read_sp(), 6);
     assert_eq!(Cpu::read_pc(), 0x7777);
+}
+use bitflags::bitflags;
+bitflags! {
+    #[derive(Copy, Clone, Default)]
+   pub(crate) struct Status:u8{
+        const CARRY =       0b0000_0001;
+        const ZERO =        0b0000_0010;
+        const IDISABLE =    0b0000_0100;
+        const DECIMAL =     0b0000_1000;
+        const BREAK =       0b0001_0000;
+        const UNUSED =      0b0010_0000;
+        const OVF =         0b0100_0000;
+        const NEGATIVE =    0b1000_0000;
+
+    }
+}
+
+impl fmt::Debug for Status {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut str = String::new();
+        if self.contains(Status::NEGATIVE) {
+            str.push('N');
+        } else {
+            str.push('n');
+        };
+        if self.contains(Status::OVF) {
+            str.push('O');
+        } else {
+            str.push('o');
+        };
+        str.push('-');
+        if self.contains(Status::BREAK) {
+            str.push('B');
+        } else {
+            str.push('b');
+        };
+
+        if self.contains(Status::DECIMAL) {
+            str.push('D');
+        } else {
+            str.push('d');
+        };
+        if self.contains(Status::IDISABLE) {
+            str.push('I');
+        } else {
+            str.push('i');
+        };
+        if self.contains(Status::CARRY) {
+            str.push('C');
+        } else {
+            str.push('c');
+        };
+        if self.contains(Status::ZERO) {
+            str.push('Z');
+        } else {
+            str.push('z');
+        };
+        write!(f, "{}", str)
+    }
 }

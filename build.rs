@@ -3,6 +3,6 @@ fn main() {
     cc::Build::new()
         .file("sim65/6502.c")
         // .include("common")
-        .define("RUST", "1")
+        .define("DB65", "1")
         .compile("sim65");
 }

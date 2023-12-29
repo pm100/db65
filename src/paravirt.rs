@@ -198,7 +198,6 @@ impl ParaVirt {
         Self::set_ax(argcount);
     }
     fn pv_exit() {
-        //     exit (Regs->AC);
         let code = ParaVirt::pop();
         Cpu::set_exit(code);
     }

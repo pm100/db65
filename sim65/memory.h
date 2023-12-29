@@ -31,13 +31,11 @@
 /*                                                                           */
 /*****************************************************************************/
 
-
-
 #ifndef MEMORY_H
 #define MEMORY_H
 
 #include "inline.h"
-#ifndef RUST
+#ifndef DB65
 extern unsigned char Mem[0x10000];
 #endif
 
@@ -45,19 +43,17 @@ extern unsigned char Mem[0x10000];
 /*                                   Code                                    */
 /*****************************************************************************/
 
-
-
-void MemWriteByte (unsigned Addr, unsigned char Val);
+void MemWriteByte(unsigned Addr, unsigned char Val);
 /* Write a byte to a memory location */
 
-void MemWriteWord (unsigned Addr, unsigned Val);
+void MemWriteWord(unsigned Addr, unsigned Val);
 /* Write a word to a memory location */
 
-#ifdef RUST
-unsigned char MemReadByte (unsigned Addr);
+#ifdef DB65
+unsigned char MemReadByte(unsigned Addr);
 #else
 #if defined(HAVE_INLINE)
-INLINE unsigned char MemReadByte (unsigned Addr)
+INLINE unsigned char MemReadByte(unsigned Addr)
 /* Read a byte from a memory location */
 {
     return Mem[Addr];
@@ -67,19 +63,17 @@ INLINE unsigned char MemReadByte (unsigned Addr)
 #endif
 #endif
 
-unsigned MemReadWord (unsigned Addr);
+unsigned MemReadWord(unsigned Addr);
 /* Read a word from a memory location */
 
-unsigned MemReadZPWord (unsigned char Addr);
+unsigned MemReadZPWord(unsigned char Addr);
 /* Read a word from the zero page. This function differs from MemReadWord in that
 ** the read will always be in the zero page, even in case of an address
 ** overflow.
 */
 
-void MemInit (void);
+void MemInit(void);
 /* Initialize the memory subsystem */
-
-
 
 /* End of memory.h */
 

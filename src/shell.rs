@@ -1,6 +1,7 @@
+use crate::cpu::Status;
 use crate::debugger::{Debugger, FrameType::*};
 use crate::execute::StopReason;
-use anyhow::{anyhow, bail, Result};
+use anyhow::{anyhow, Result};
 use clap::Arg;
 use clap::Command;
 
@@ -84,7 +85,7 @@ impl Shell {
                 }
                 Err(ReadlineError::Interrupted) => {
                     println!("CTRL-C");
-                    break;
+                    //  break;
                 }
                 Err(ReadlineError::Eof) => {
                     println!("CTRL-D");
@@ -107,15 +108,18 @@ impl Shell {
         //.map_err(|e| e.to_string())?;
         match matches.subcommand() {
             Some(("break", args)) => {
-                if let Some(addr) = args.get_one::<String>("address") {
-                    self.debugger.set_break(&addr, false)?;
-                } else {
-                    let blist = self.debugger.get_breaks();
-                    for i in 0..blist.len() {
-                        println!("{:04x}", blist[i]);
-                    }
+                let addr = args.get_one::<String>("address").unwrap();
+                self.debugger.set_break(&addr, false)?;
+            }
+
+            Some(("list_bp", args)) => {
+                let blist = self.debugger.get_breaks();
+                for i in 0..blist.len() {
+                    let bp = self.debugger.get_bp(blist[i]).unwrap();
+                    println!("#{} 0x{:04X} ({})", bp.number, bp.addr, bp.symbol);
                 }
             }
+
             Some(("symbols", args)) => {
                 let file = args.get_one::<String>("file").unwrap();
                 self.debugger.load_ll(Path::new(file))?;
@@ -144,20 +148,20 @@ impl Shell {
                 self.stop(reason);
             }
             Some(("go", _args)) => {
-                // let addr = args.get_one::<String>("address").unwrap();
                 let reason = self.debugger.go()?;
                 self.stop(reason);
             }
             Some(("next", _args)) => {
-                // let addr = args.get_one::<String>("address").unwrap();
                 let reason = self.debugger.next()?;
                 self.stop(reason);
             }
             Some(("step", _args)) => {
-                // let addr = args.get_one::<String>("address").unwrap();
                 let reason = self.debugger.step()?;
                 self.stop(reason);
-                // println!("run {}", addr);
+            }
+            Some(("delete_breakpoint", args)) => {
+                let id = args.get_one::<String>("id");
+                self.debugger.delete_breakpoint(id)?;
             }
             Some(("back_trace", _args)) => {
                 let stack = self.debugger.read_stack();
@@ -169,7 +173,6 @@ impl Shell {
                         }
                         Pha(ac) => println!("pha x{:02x}", ac),
                         Php(sr) => println!("php x{:02x}", sr),
-                        _ => {}
                     }
                 }
             }
@@ -227,8 +230,10 @@ impl Shell {
     }
     fn stop(&mut self, reason: StopReason) {
         match reason {
-            StopReason::BreakPoint(_) => {
-                println!("breakpoint");
+            StopReason::BreakPoint(bp_addr) => {
+                //println!("breakpoint");
+                let bp = self.debugger.get_bp(bp_addr).unwrap();
+                println!("bp #{} {}", bp.number, bp.symbol);
             }
             StopReason::Exit(_) => {
                 println!("exit");
@@ -244,15 +249,17 @@ impl Shell {
         let inst_addr = self.debugger.read_pc();
         let mem = self.debugger.get_chunk(self.debugger.read_pc(), 3).unwrap();
         self.debugger.dis(&mem, inst_addr);
+        let stat = Status::from_bits_truncate(self.debugger.read_sr());
+
         println!(
-            "{:04x}:       {:<15} A={:02x} X={:02x} Y={:02x} SP={:02x} SR={:02x}",
+            "{:04x}:       {:<15} A={:02x} X={:02x} Y={:02x} SP={:02x} SR={:?}",
             self.debugger.read_pc(),
             self.debugger.dis_line,
             self.debugger.read_ac(),
             self.debugger.read_xr(),
             self.debugger.read_yr(),
             self.debugger.read_sp(),
-            self.debugger.read_sr()
+            stat
         );
     }
     fn syntax(&self) -> Command {
@@ -277,8 +284,15 @@ impl Shell {
             .help_template(PARSER_TEMPLATE)
             .subcommand(
                 Command::new("break")
-                    .about("set break points, no argument means list all")
-                    .arg(Arg::new("address"))
+                    .about("set break points")
+                    .alias("b")
+                    .arg(Arg::new("address").required(true))
+                    .help_template(APPLET_TEMPLATE),
+            )
+            .subcommand(
+                Command::new("list_bp")
+                    .about("set break points")
+                    .alias("bl")
                     .help_template(APPLET_TEMPLATE),
             )
             .subcommand(
@@ -345,6 +359,13 @@ impl Shell {
                 Command::new("back_trace")
                     .alias("bt")
                     .about("display call stack")
+                    .help_template(APPLET_TEMPLATE),
+            )
+            .subcommand(
+                Command::new("delete_breakpoint")
+                    .alias("bd")
+                    .arg(Arg::new("id").required(false))
+                    .about("delete breakpoint")
                     .help_template(APPLET_TEMPLATE),
             )
     }

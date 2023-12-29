@@ -5,7 +5,7 @@ the same functionality as the cli shell.
 
 */
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 use std::{
     collections::HashMap,
     fs::File,
@@ -17,6 +17,8 @@ use crate::{cpu::Cpu, execute::StopReason, loader};
 pub struct Debugger {
     symbols: HashMap<String, u16>,
     pub break_points: HashMap<u16, BreakPoint>,
+    //pub break_points: HashMap<u16, BreakPoint>,
+    pub(crate) next_bp: Option<u16>,
     _loader_sp: u8,
     loader_start: u16,
     pub(crate) dis_line: String,
@@ -24,7 +26,6 @@ pub struct Debugger {
     pub(crate) stack_frames: Vec<StackFrame>,
     pub(crate) enable_stack_check: bool,
     pub(crate) enable_mem_check: bool,
-    cmd_args: Vec<String>,
     load_name: String,
 }
 #[derive(Debug)]
@@ -40,8 +41,8 @@ pub struct StackFrame {
 #[derive(Debug, Clone)]
 pub struct BreakPoint {
     pub(crate) addr: u16,
-    pub(crate) _symbol: String,
-    pub(crate) _number: u16,
+    pub(crate) symbol: String,
+    pub(crate) number: usize,
     pub(crate) temp: bool,
 }
 impl Debugger {
@@ -57,31 +58,54 @@ impl Debugger {
             stack_frames: Vec::new(),
             enable_stack_check: false,
             enable_mem_check: false,
-            cmd_args: Vec::new(),
+            next_bp: None,
             load_name: String::new(),
         }
     }
+    pub fn delete_breakpoint(&mut self, id_opt: Option<&String>) -> Result<()> {
+        if let Some(id) = id_opt {
+            if let Ok(num) = usize::from_str_radix(&id, 10) {
+                if let Some(find) = self.break_points.iter().find_map(|bp| {
+                    if bp.1.number == num {
+                        Some(*bp.0)
+                    } else {
+                        None
+                    }
+                }) {
+                    self.break_points.remove(&find);
+                }
+            }
+            // else lookup symbol?
+        } else {
+            self.break_points.clear();
+        };
+        Ok(())
+    }
     pub fn set_break(&mut self, addr_str: &str, temp: bool) -> Result<()> {
         let bp_addr;
-        let sym = self.symbols.get(addr_str);
+        let first_char = addr_str.chars().next().unwrap();
         let mut save_sym = String::new();
-        if sym.is_some() {
-            save_sym = addr_str.to_string();
-            bp_addr = *sym.unwrap();
+        if first_char == '.' {
+            if let Some(sym) = self.symbols.get(addr_str) {
+                save_sym = addr_str.to_string();
+                bp_addr = *sym;
+            } else {
+                bail!("unknown symbol")
+            }
         } else {
             if addr_str.chars().next().unwrap() == '$' {
                 let rest = addr_str[1..].to_string();
                 bp_addr = u16::from_str_radix(&rest, 16)?;
             } else {
-                bp_addr = u16::from_str_radix(addr_str, 16)?;
+                bp_addr = u16::from_str_radix(addr_str, 10)?;
             }
         }
         self.break_points.insert(
             bp_addr,
             BreakPoint {
                 addr: bp_addr,
-                _symbol: save_sym,
-                _number: 0,
+                symbol: save_sym,
+                number: self.break_points.len() + 1,
                 temp,
             },
         );
@@ -129,22 +153,19 @@ impl Debugger {
     pub fn next(&mut self) -> Result<StopReason> {
         let next_inst = Cpu::read_byte(Cpu::read_pc());
         let reason = if next_inst == 0x20 {
-            //jsr
+            // if the next instruction is a jsr then]
+            // set a temp bp on the folloing inst and run
             let inst = Cpu::read_pc() + 3;
-            self.break_points.insert(
-                inst,
-                BreakPoint {
-                    addr: inst,
-                    _symbol: String::new(),
-                    _number: 0,
-                    temp: true,
-                },
-            );
+            self.next_bp = Some(inst);
             self.execute(0)
         } else {
+            // otherwise execute one instruction
             self.execute(1)
         };
         reason
+    }
+    pub fn get_bp(&self, addr: u16) -> Option<&BreakPoint> {
+        return self.break_points.get(&addr);
     }
     pub fn step(&mut self) -> Result<StopReason> {
         self.execute(1)
@@ -162,9 +183,10 @@ impl Debugger {
         self.stack_frames.clear();
         self.core_run()
     }
-    pub fn get_chunk(&self, addr: u16, len: u16) -> Result<Vec<u8>> {
+    pub fn get_chunk(&self, addr: u16, mut len: u16) -> Result<Vec<u8>> {
         let mut v = Vec::new();
-        //let addr = self.convert_addr(addr_str)?;
+        let max_add = addr.saturating_add(len);
+        len = max_add - addr;
         for i in 0..len {
             v.push(Cpu::read_byte(addr + i));
         }
