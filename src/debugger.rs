@@ -209,7 +209,7 @@ impl Debugger {
                 return name.to_string();
             }
         }
-        format!("x{:04x}", addr)
+        format!("${:04x}", addr)
     }
     pub fn zp_symbol_lookup(&self, addr: u8) -> String {
         for (name, sym_addr) in &self.symbols {
@@ -217,7 +217,7 @@ impl Debugger {
                 return name.to_string();
             }
         }
-        format!("{:02x}", addr)
+        format!("${:02x}", addr)
     }
     pub fn read_pc(&self) -> u16 {
         Cpu::read_pc()

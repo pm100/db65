@@ -778,7 +778,7 @@ impl Debugger {
 fn test_dis() {
     let mut dbg = Debugger::new();
     let mem = vec![0x00, 0x01, 0x02];
-    let len = dbg.dis(&mem);
+    let len = dbg.dis(&mem, 0);
     assert_eq!(len, 1);
     assert_eq!(dbg.dis_line, "brk   ");
 }
@@ -786,7 +786,7 @@ fn test_dis() {
 fn test_dis_ora() {
     let mut dbg = Debugger::new();
     let mem = vec![0x01, 0x01, 0x02];
-    let len = dbg.dis(&mem);
+    let len = dbg.dis(&mem, 0);
     assert_eq!(len, 2);
     assert_eq!(dbg.dis_line, "ora   ($01,X)");
 }
@@ -794,7 +794,7 @@ fn test_dis_ora() {
 fn test_jsr() {
     let mut dbg = Debugger::new();
     let mem = vec![0x20, 0x01, 0x02];
-    let len = dbg.dis(&mem);
+    let len = dbg.dis(&mem, 0);
     assert_eq!(len, 3);
     assert_eq!(dbg.dis_line, "jsr   $0201");
 }
