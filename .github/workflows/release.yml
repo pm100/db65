@@ -1,6 +1,9 @@
 name: CD
 
-on: workflow_dispatch
+on:
+  push:
+    tags:
+      - "v*.*.*"
 
 jobs:
   release:
@@ -41,8 +44,8 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-         prerelease: ${{ contains(github.ref, '-') }}
-         tag_name: a1
+        prerelease: ${{ contains(github.ref, '-') }}
+        
         files: |
           ./target/release/db65.exe
           ./target/release/db65
