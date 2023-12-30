@@ -30,7 +30,7 @@ jobs:
         components: clippy
 
     - name: Build
-      run: cargo build
+      run: cargo build --release
 
 
 
@@ -41,10 +41,8 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
-        body: ${{ steps.release_notes.outputs.release_notes }}
-        prerelease: ${{ contains(github.ref, '-') }}
+         prerelease: ${{ contains(github.ref, '-') }}
+         tag_name: a1
         files: |
-          ./release/*.tar.gz
-          ./release/*.zip
-          ./release/*.msi
-
+          ./target/release/db65.exe
+          ./target/release/db65
