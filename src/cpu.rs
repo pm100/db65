@@ -194,6 +194,7 @@ impl Cpu {
         unsafe {
             THECPU.regs = ReadRegisters();
             THECPU.exit = false;
+            THECPU.memhitcount = 0;
             THECPU.arg_array.clear();
             Reset();
         }
