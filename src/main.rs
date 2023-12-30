@@ -1,3 +1,5 @@
+#![allow(clippy::cast_possible_truncation)]
+#![allow(clippy::cast_lossless)]
 use crate::shell::Shell;
 use anyhow::Result;
 use clap::Parser;
@@ -29,7 +31,7 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let mut sh = Shell::new();
-    sh.shell(cli.command_file, cli.args)?;
+    sh.shell(cli.command_file, &cli.args)?;
 
     Ok(())
 }

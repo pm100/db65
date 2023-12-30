@@ -1,8 +1,9 @@
+#![allow(clippy::uninlined_format_args)]
 use crate::cpu::Status;
-use crate::debugger::{Debugger, FrameType::*};
+use crate::debugger::{Debugger, FrameType::*, WatchType};
 use crate::execute::StopReason;
 use crate::syntax;
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, bail, Result};
 use clap::ArgMatches;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
@@ -25,7 +26,7 @@ impl Shell {
             _current_mem_addr: 0,
         }
     }
-    pub fn shell(&mut self, file: Option<PathBuf>, _args: Vec<String>) -> Result<u8> {
+    pub fn shell(&mut self, file: Option<PathBuf>, _args: &[String]) -> Result<u8> {
         let mut rl = DefaultEditor::new()?;
 
         if let Err(e) = rl.load_history("history.txt") {
@@ -38,17 +39,15 @@ impl Shell {
             }
         }
 
-        // if let Some(args) = args {
-        //self.debugger.cmd_args = args;
-        //}
-
         //do we have a command file to run?
         if let Some(f) = file {
             let mut fd = File::open(f)?;
             let mut commstr = String::new();
             fd.read_to_string(&mut commstr)?;
-            let mut commands: VecDeque<String> =
-                commstr.split("\n").map(|s| s.to_string()).collect();
+            let mut commands: VecDeque<String> = commstr
+                .split('\n')
+                .map(std::string::ToString::to_string)
+                .collect();
             loop {
                 let line = commands.pop_front();
                 if line.is_none() {
@@ -62,8 +61,12 @@ impl Shell {
             }
         }
         // remeber the last line, replay it if user hits enter
-
+        // maybe need more sophisticated mechanism. ie
+        // 'dis x' followed by enter should do plain 'dis'
         let mut lastinput = String::new();
+
+        // main shell loop
+        // readline, dispatch it, repeat
         loop {
             let readline = rl.readline(">> ");
 
@@ -108,17 +111,37 @@ impl Shell {
         match matches.subcommand() {
             Some(("break", args)) => {
                 let addr = args.get_one::<String>("address").unwrap();
-                self.debugger.set_break(&addr, false)?;
+                self.debugger.set_break(addr, false)?;
             }
-
+            Some(("watch", args)) => {
+                let addr = args.get_one::<String>("address").unwrap();
+                let read = *args.get_one::<bool>("read").unwrap();
+                let write = *args.get_one::<bool>("write").unwrap();
+                let rw = if read && write {
+                    WatchType::ReadWrite
+                } else if read {
+                    WatchType::Read
+                } else if write {
+                    WatchType::Write
+                } else {
+                    bail!("must specify -r or -w")
+                };
+                self.debugger.set_watch(addr, rw)?;
+            }
             Some(("list_bp", _)) => {
                 let blist = self.debugger.get_breaks();
-                for i in 0..blist.len() {
-                    let bp = self.debugger.get_bp(blist[i]).unwrap();
+                for bp_addr in &blist {
+                    let bp = self.debugger.get_bp(*bp_addr).unwrap();
                     println!("#{} 0x{:04X} ({})", bp.number, bp.addr, bp.symbol);
                 }
             }
-
+            Some(("list_wp", _)) => {
+                let wlist = self.debugger.get_watches();
+                for wp_addr in &wlist {
+                    let wp = self.debugger.get_watch(*wp_addr).unwrap();
+                    println!("#{} 0x{:04X} ({})", wp.number, wp.addr, wp.symbol);
+                }
+            }
             Some(("symbols", args)) => {
                 let file = args.get_one::<String>("file").unwrap();
                 self.debugger.load_ll(Path::new(file))?;
@@ -136,7 +159,7 @@ impl Shell {
 
             Some(("memory", args)) => {
                 let addr_str = args.get_one::<String>("address").unwrap();
-                let addr = self.debugger.convert_addr(&addr_str)?;
+                let addr = self.debugger.convert_addr(addr_str)?;
                 let chunk = self.debugger.get_chunk(addr, 48)?;
                 self.mem_dump(addr, &chunk);
             }
@@ -144,7 +167,7 @@ impl Shell {
             Some(("run", args)) => {
                 let cmd_args = args
                     .get_many::<String>("args")
-                    .map(|vals| vals.collect::<Vec<_>>())
+                    .map(Iterator::collect)
                     .unwrap_or_default();
 
                 let reason = self.debugger.run(cmd_args)?;
@@ -177,7 +200,7 @@ impl Shell {
                     let frame = &stack[i];
                     match frame.frame_type {
                         Jsr((addr, ret, _sp, _)) => {
-                            println!("jsr {:<10} x{:04x}", self.debugger.symbol_lookup(addr), ret)
+                            println!("jsr {:<10} x{:04x}", self.debugger.symbol_lookup(addr), ret);
                         }
                         Pha(ac) => println!("pha x{:02x}", ac),
                         Php(sr) => println!("php x{:02x}", sr),
@@ -187,7 +210,7 @@ impl Shell {
 
             Some(("dis", args)) => {
                 let mut addr = if let Some(addr_str) = args.get_one::<String>("address") {
-                    self.debugger.convert_addr(&addr_str)?
+                    self.debugger.convert_addr(addr_str)?
                 } else {
                     let mut a = self.current_dis_addr;
                     if a == 0 {
@@ -201,7 +224,7 @@ impl Shell {
                     let chunk = self.debugger.get_chunk(addr, 3)?;
                     let delta = self.debugger.dis(&chunk, addr);
                     let addr_str = self.debugger.symbol_lookup(addr);
-                    if addr_str.chars().next().unwrap() == '.' {
+                    if addr_str.starts_with('.') {
                         println!("{}:", addr_str);
                     }
                     println!("{:04x}:       {}", addr, self.debugger.dis_line);
@@ -211,7 +234,7 @@ impl Shell {
             }
             Some(("print", args)) => {
                 let addr_str = args.get_one::<String>("address").unwrap();
-                let addr = self.debugger.convert_addr(&addr_str)?;
+                let addr = self.debugger.convert_addr(addr_str)?;
                 self.print(addr, args)?;
             }
             Some((name, _matches)) => unimplemented!("{name}"),
@@ -222,7 +245,7 @@ impl Shell {
     }
 
     fn print(&self, addr: u16, args: &ArgMatches) -> Result<()> {
-        if args.contains_id("asstring") {
+        if *args.get_one::<bool>("asstring").unwrap() {
             let mut addr = addr;
             loop {
                 let chunk = self.debugger.get_chunk(addr, 1)?;
@@ -233,9 +256,9 @@ impl Shell {
                 addr += 1;
             }
             println!();
-        } else if args.contains_id("aspointer") {
+        } else if *args.get_one::<bool>("aspointer").unwrap() {
             let chunk = self.debugger.get_chunk(addr, 2)?;
-            println!("{:02x}{:02x} ", chunk[0], chunk[1]);
+            println!("{:02x}{:02x} ", chunk[1], chunk[0]);
         } else {
             // asint
 
@@ -249,7 +272,7 @@ impl Shell {
     fn mem_dump(&mut self, mut addr: u16, chunk: &[u8]) {
         // pretty memory dump
         let mut line = String::new();
-        for i in 0..chunk.len() {
+        for (i, byte) in chunk.iter().enumerate() {
             if i % 16 == 0 {
                 if i > 0 {
                     println!("{}", line);
@@ -257,9 +280,9 @@ impl Shell {
                 }
                 print!("{:04x}: ", addr);
             }
-            print!("{:02x} ", chunk[i]);
-            if chunk[i] >= 32 && chunk[i] < 127 {
-                line.push(chunk[i] as char);
+            print!("{:02x} ", byte);
+            if *byte >= 32 && *byte < 127 {
+                line.push(*byte as char);
             } else {
                 line.push('.');
             }
@@ -281,6 +304,10 @@ impl Shell {
             StopReason::Count | StopReason::Next => {}
             StopReason::Bug(_) => {
                 println!("bug {:?}", reason);
+            }
+            StopReason::WatchPoint(addr) => {
+                let wp = self.debugger.get_watch(addr).unwrap();
+                println!("watch #{} 0x{:04x} ({}) ", wp.number, wp.addr, wp.symbol);
             }
         }
         // disassemble the current instruction

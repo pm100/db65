@@ -13,6 +13,7 @@ use anyhow::Result;
 #[derive(Debug, Clone)]
 pub enum StopReason {
     BreakPoint(u16),
+    WatchPoint(u16),
     Exit(u8),
     Count,
     Next,
@@ -25,12 +26,12 @@ pub enum BugType {
 }
 use crate::{
     cpu::Cpu,
-    debugger::{Debugger, FrameType, StackFrame},
+    debugger::{Debugger, FrameType, StackFrame, WatchType},
 };
 impl Debugger {
     pub fn execute(&mut self, mut count: u16) -> Result<StopReason> {
         let counting = count > 0;
-        let reason = loop {
+        let reason = 'main_loop: loop {
             let pc = Cpu::read_pc();
             /*
             Stack tracking code
@@ -98,7 +99,7 @@ impl Debugger {
                 }
                 _ => {}
             };
-
+            Cpu::reset_memhits();
             // Now execute the instruction
             self.ticks += Cpu::execute_insn() as usize;
 
@@ -122,6 +123,29 @@ impl Debugger {
                 if next == pc {
                     self.next_bp = None;
                     break StopReason::Next;
+                }
+            }
+
+            // did we hit a watch
+            let mhc = Cpu::get_memhitcount();
+            if mhc > 0 && !self.watch_points.is_empty() {
+                for (addr, wp) in self.watch_points.iter() {
+                    for hit in Cpu::get_memhits() {
+                        if hit.1 == *addr {
+                            match (wp.watch.clone(), hit.0) {
+                                (WatchType::Read, false) => {
+                                    break 'main_loop StopReason::WatchPoint(hit.1);
+                                }
+                                (WatchType::Write, true) => {
+                                    break 'main_loop StopReason::WatchPoint(hit.1);
+                                }
+                                (WatchType::ReadWrite, _) => {
+                                    break 'main_loop StopReason::WatchPoint(hit.1);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
                 }
             }
             if let Some(bp) = self.break_points.get(&pc) {

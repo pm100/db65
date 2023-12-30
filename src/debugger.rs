@@ -17,7 +17,7 @@ use crate::{cpu::Cpu, execute::StopReason, loader};
 pub struct Debugger {
     symbols: HashMap<String, u16>,
     pub break_points: HashMap<u16, BreakPoint>,
-    // pub(crate) watch_points: HashMap<u16, WatchPoint>,
+    pub(crate) watch_points: HashMap<u16, WatchPoint>,
     pub(crate) next_bp: Option<u16>,
     loader_start: u16,
     pub(crate) dis_line: String,
@@ -44,6 +44,7 @@ pub struct BreakPoint {
     pub(crate) number: usize,
     pub(crate) temp: bool,
 }
+#[derive(Debug, Clone)]
 pub enum WatchType {
     Read,
     Write,
@@ -53,7 +54,7 @@ pub struct WatchPoint {
     pub(crate) addr: u16,
     pub(crate) symbol: String,
     pub(crate) number: usize,
-    pub(crate) Watch: bool,
+    pub(crate) watch: WatchType,
 }
 impl Debugger {
     pub fn new() -> Self {
@@ -61,7 +62,7 @@ impl Debugger {
         Self {
             symbols: HashMap::new(),
             break_points: HashMap::new(),
-
+            watch_points: HashMap::new(),
             loader_start: 0,
             dis_line: String::new(),
             ticks: 0,
@@ -74,7 +75,7 @@ impl Debugger {
     }
     pub fn delete_breakpoint(&mut self, id_opt: Option<&String>) -> Result<()> {
         if let Some(id) = id_opt {
-            if let Ok(num) = usize::from_str_radix(&id, 10) {
+            if let Ok(num) = id.parse::<usize>() {
                 if let Some(find) = self.break_points.iter().find_map(|bp| {
                     if bp.1.number == num {
                         Some(*bp.0)
@@ -102,13 +103,11 @@ impl Debugger {
             } else {
                 bail!("unknown symbol")
             }
+        } else if first_char == '$' {
+            let rest = addr_str[1..].to_string();
+            bp_addr = u16::from_str_radix(&rest, 16)?;
         } else {
-            if addr_str.chars().next().unwrap() == '$' {
-                let rest = addr_str[1..].to_string();
-                bp_addr = u16::from_str_radix(&rest, 16)?;
-            } else {
-                bp_addr = u16::from_str_radix(addr_str, 10)?;
-            }
+            bp_addr = addr_str.parse::<u16>()?;
         }
         self.break_points.insert(
             bp_addr,
@@ -117,6 +116,35 @@ impl Debugger {
                 symbol: save_sym,
                 number: self.break_points.len() + 1,
                 temp,
+            },
+        );
+        Ok(())
+    }
+
+    pub fn set_watch(&mut self, addr_str: &str, wt: WatchType) -> Result<()> {
+        let wp_addr;
+        let first_char = addr_str.chars().next().unwrap();
+        let mut save_sym = String::new();
+        if first_char == '.' {
+            if let Some(sym) = self.symbols.get(addr_str) {
+                save_sym = addr_str.to_string();
+                wp_addr = *sym;
+            } else {
+                bail!("unknown symbol")
+            }
+        } else if first_char == '$' {
+            let rest = addr_str[1..].to_string();
+            wp_addr = u16::from_str_radix(&rest, 16)?;
+        } else {
+            wp_addr = addr_str.parse::<u16>()?;
+        }
+        self.watch_points.insert(
+            wp_addr,
+            WatchPoint {
+                addr: wp_addr,
+                symbol: save_sym,
+                number: self.break_points.len() + 1,
+                watch: wt,
             },
         );
         Ok(())
@@ -130,7 +158,7 @@ impl Debugger {
                 0 => break,
                 _len => {
                     //al 000000 .sp
-                    let mut spl = line.split(" ");
+                    let mut spl = line.split(' ');
                     let _al = spl.next();
                     let addr_str = spl.next().unwrap().trim_end();
                     let name = spl.next().unwrap().trim_end();
@@ -154,13 +182,17 @@ impl Debugger {
     pub fn get_breaks(&self) -> Vec<u16> {
         self.break_points.iter().map(|bp| bp.1.addr).collect()
     }
+    pub fn get_watches(&self) -> Vec<u16> {
+        self.watch_points.iter().map(|wp| wp.1.addr).collect()
+    }
     pub fn go(&mut self) -> Result<StopReason> {
         self.execute(0) // 0 = forever
     }
 
     pub fn next(&mut self) -> Result<StopReason> {
         let next_inst = Cpu::read_byte(Cpu::read_pc());
-        let reason = if next_inst == 0x20 {
+
+        if next_inst == 0x20 {
             // if the next instruction is a jsr then]
             // set a temp bp on the folloing inst and run
             let inst = Cpu::read_pc() + 3;
@@ -169,11 +201,13 @@ impl Debugger {
         } else {
             // otherwise execute one instruction
             self.execute(1)
-        };
-        reason
+        }
     }
     pub fn get_bp(&self, addr: u16) -> Option<&BreakPoint> {
         return self.break_points.get(&addr);
+    }
+    pub fn get_watch(&self, addr: u16) -> Option<&WatchPoint> {
+        return self.watch_points.get(&addr);
     }
     pub fn step(&mut self) -> Result<StopReason> {
         self.execute(1)
@@ -183,8 +217,8 @@ impl Debugger {
         Cpu::write_word(0xFFFC, self.loader_start);
         Cpu::reset();
         Cpu::push_arg(&self.load_name);
-        for i in 0..cmd_args.len() {
-            Cpu::push_arg(&cmd_args[i])
+        for arg in &cmd_args {
+            Cpu::push_arg(arg)
         }
         self.stack_frames.clear();
         self.execute(0) // 0 = forever
@@ -208,11 +242,10 @@ impl Debugger {
             return Ok(*sym);
         }
 
-        if addr_str.chars().next().unwrap() == '$' {
-            let rest = addr_str[1..].to_string();
-            return Ok(u16::from_str_radix(&rest, 16)?);
+        if let Some(hex) = addr_str.strip_prefix('$') {
+            return Ok(u16::from_str_radix(hex, 16)?);
         }
-        Ok(u16::from_str_radix(addr_str, 10)?)
+        Ok(addr_str.parse::<u16>()?)
     }
 
     // reverse of convert_addr.

@@ -33,16 +33,20 @@ static mut THECPU: Cpu = Cpu {
     exit_code: 0,
     memcheck: None,
     arg_array: Vec::new(),
+    memhits: [(false, 0); 6],
+    memhitcount: 0,
 };
 pub struct Cpu {
-    ram: [u8; 65536],       // the actual 6502 ram
-    shadow: [u8; 65536],    // a shadow of the ram, used for memcheck
-    regs: *mut CPURegs,     // a pointer to the register block
-    exit: bool,             // set to true when the 6502 wants to exit
-    exit_code: u8,          // the exit code
-    sp65_addr: u8,          // the location of the cc65 'stack' pointer
-    memcheck: Option<u16>,  // the address of the last memcheck failure
-    arg_array: Vec<String>, // the command line arguments
+    ram: [u8; 65536],          // the actual 6502 ram
+    shadow: [u8; 65536],       // a shadow of the ram, used for memcheck
+    regs: *mut CPURegs,        // a pointer to the register block
+    exit: bool,                // set to true when the 6502 wants to exit
+    exit_code: u8,             // the exit code
+    sp65_addr: u8,             // the location of the cc65 'stack' pointer
+    memcheck: Option<u16>,     // the address of the last memcheck failure
+    arg_array: Vec<String>,    // the command line arguments
+    memhits: [(bool, u16); 6], // used for data watches
+    memhitcount: u8,           // entry count in hit array for this instruction
 }
 
 // our callable functions into sim65
@@ -58,10 +62,12 @@ extern "C" {
 
 // callback from sim65 to us
 #[no_mangle]
-extern "C" fn MemWriteByte(_addr: u32, _val: u8) {
+extern "C" fn MemWriteByte(addr: u32, val: u8) {
     unsafe {
-        THECPU.inner_write_byte(_addr as u16, _val);
-        THECPU.shadow[_addr as usize] = 1;
+        THECPU.inner_write_byte(addr as u16, val);
+        THECPU.shadow[addr as usize] = 1;
+        THECPU.memhits[THECPU.memhitcount as usize] = (true, addr as u16);
+        THECPU.memhitcount += 1;
     }
 }
 #[no_mangle]
@@ -73,6 +79,10 @@ extern "C" fn MemReadWord(addr: u32) -> u32 {
         } else if THECPU.shadow[(addr + 1) as usize] == 0 {
             THECPU.memcheck = Some(addr as u16 + 1);
         }
+        THECPU.memhits[THECPU.memhitcount as usize] = (false, addr as u16);
+        THECPU.memhits[(THECPU.memhitcount + 1) as usize] = (false, (addr + 1) as u16);
+        THECPU.memhitcount += 2;
+
         w
     }
 }
@@ -83,6 +93,8 @@ extern "C" fn MemReadByte(addr: u32) -> u8 {
         if THECPU.shadow[addr as usize] == 0 {
             THECPU.memcheck = Some(addr as u16);
         }
+        THECPU.memhits[THECPU.memhitcount as usize] = (false, addr as u16);
+        THECPU.memhitcount += 1;
         b
     }
 }
@@ -92,18 +104,21 @@ extern "C" fn MemReadZPWord(mut addr: u8) -> u16 {
         let b1 = THECPU.inner_read_byte(addr as u16) as u16;
         addr = addr.wrapping_add(1);
         let b2 = THECPU.inner_read_byte(addr as u16) as u16;
-        return b1 | (b2 << 8);
+        THECPU.memhits[THECPU.memhitcount as usize] = (false, addr as u16);
+        THECPU.memhits[(THECPU.memhitcount + 1) as usize] = (false, (addr + 1) as u16);
+        THECPU.memhitcount += 2;
+        b1 | (b2 << 8)
     }
 }
 #[no_mangle]
 extern "C" fn Warning(_format: *const c_char, _x: u32, _y: u32) -> u32 {
     println!("Warning");
-    return 0;
+    0
 }
 #[no_mangle]
 extern "C" fn Error(_format: *const c_char, _x: u32, _y: u32) -> u32 {
     println!("Error");
-    return 0;
+    0
 }
 #[no_mangle]
 extern "C" fn ParaVirtHooks(_regs: *mut CPURegs) {
@@ -127,17 +142,26 @@ impl Cpu {
             THECPU.sp65_addr = v;
         }
     }
-    pub fn get_arg_count() -> u8 {
+    pub fn reset_memhits() {
         unsafe {
-            return THECPU.arg_array.len() as u8;
+            THECPU.memhitcount = 0;
         }
+    }
+    pub fn get_memhitcount() -> u8 {
+        unsafe { THECPU.memhitcount }
+    }
+    pub fn get_memhits() -> [(bool, u16); 6] {
+        unsafe { THECPU.memhits }
+    }
+    pub fn get_arg_count() -> u8 {
+        unsafe { THECPU.arg_array.len() as u8 }
     }
     pub fn get_arg(i: u8) -> &'static str {
         unsafe { THECPU.arg_array[i as usize].as_str() }
     }
-    pub fn push_arg(v: &String) {
+    pub fn push_arg(v: &str) {
         unsafe {
-            THECPU.arg_array.push(v.clone());
+            THECPU.arg_array.push(v.to_owned());
         }
     }
     pub fn get_memcheck() -> Option<u16> {
@@ -159,11 +183,11 @@ impl Cpu {
     }
     pub fn exit_done() -> Option<u8> {
         unsafe {
-            return if THECPU.exit {
+            if THECPU.exit {
                 Some(THECPU.exit_code)
             } else {
                 None
-            };
+            }
         }
     }
     pub fn reset() {

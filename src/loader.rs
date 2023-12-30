@@ -8,15 +8,15 @@ use std::io::{BufReader, Bytes, Read};
 use std::path::Path;
 
 use crate::cpu::Cpu;
-static HEADER: &'static [u8] = &[0x73, 0x69, 0x6D, 0x36, 0x35];
+static HEADER: &[u8] = &[0x73, 0x69, 0x6D, 0x36, 0x35];
 pub fn load_code(file: &Path) -> Result<(u8, u16, u8, u16)> {
     let f = File::open(file)?;
     let reader = BufReader::new(f);
     let mut bytes = reader.bytes();
 
-    for i in 0..5 {
+    for hb in HEADER {
         let b = bytes.next().unwrap()?;
-        if b != HEADER[i] {
+        if b != *hb {
             bail!("invalid header");
         }
     }

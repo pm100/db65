@@ -649,24 +649,24 @@ impl Debugger {
             // this code deals with the non memory ones
             0x0a | 0x2a | 0x4a | 0x6a => {
                 // accumulator
-                self.dis_line.push_str("A");
-                return 0;
+                self.dis_line.push('A');
+                0
             }
             0xA2 | 0xa0 | 0xc0 | 0xe0 => {
                 // immediate
                 let immed = mem[1];
                 self.dis_line.push_str(&format!("#${:02X} ", immed));
-                return 1;
+                1
             }
             _ if inst & 0b00011100 == 0b00001000 => {
                 // immediate
                 let immed = mem[1];
                 self.dis_line.push_str(&format!("#${:02X} ", immed));
-                return 1;
+                1
             }
             _ => {
                 // otherwise deal with memory
-                return self.operand_addr(mem);
+                self.operand_addr(mem)
             }
         }
     }
@@ -677,7 +677,7 @@ impl Debugger {
         inst_addr += 2;
         let target = inst_addr.wrapping_add_signed(offset as i16);
         let sym = self.symbol_lookup(target);
-        self.dis_line.push_str(&format!("{}", sym));
+        self.dis_line.push_str(&sym.to_string());
         1
     }
     fn operand_addr(&mut self, mem: &[u8]) -> u8 {
@@ -692,15 +692,16 @@ impl Debugger {
             self.dis_line.push_str(&sym);
             return 2;
         }
-        let operand = match inst & 0b00011100 {
-            0b000_001_00 => {
+        
+        match inst & 0b00011100 {
+            0b0000_0100 => {
                 // zero page
                 let lo = mem[1];
                 let sym = self.zp_symbol_lookup(lo);
                 self.dis_line.push_str(&sym);
                 1
             }
-            0b000_011_00 => {
+            0b0000_1100 => {
                 // absolute
                 let lo = mem[1] as u16;
                 let hi = mem[2] as u16;
@@ -709,7 +710,7 @@ impl Debugger {
                 self.dis_line.push_str(&sym);
                 2
             }
-            0b000_101_00 => {
+            0b0001_0100 => {
                 // zpg, x -- except
                 if inst == 0x96 || inst == 0xb6 {
                     self.zpg_y(mem)
@@ -717,7 +718,7 @@ impl Debugger {
                     self.zpg_x(mem)
                 }
             }
-            0b000_111_00 => {
+            0b0001_1100 => {
                 // abs,x -- except
                 if inst == 0xbe {
                     self.abs_y(mem)
@@ -725,11 +726,11 @@ impl Debugger {
                     self.abs_x(mem)
                 }
             }
-            0b000_110_00 => {
+            0b0001_1000 => {
                 // abs,y
                 self.abs_y(mem)
             }
-            0b000_100_00 => {
+            0b0001_0000 => {
                 // (ind),y
                 let zpaddr = mem[1];
                 let sym = self.zp_symbol_lookup(zpaddr);
@@ -737,7 +738,7 @@ impl Debugger {
                 self.dis_line.push_str(&format!("({}),Y", sym));
                 1
             }
-            0b000_000_00 => {
+            0b0000_0000 => {
                 // (ind,x)
                 let zpaddr = mem[1];
                 let sym = self.zp_symbol_lookup(zpaddr);
@@ -745,8 +746,7 @@ impl Debugger {
                 1
             }
             _ => panic!("Unknown addr format: {:02X}", inst),
-        };
-        operand
+        }
     }
     fn abs_y(&mut self, mem: &[u8]) -> u8 {
         let lo = mem[1] as u16;
@@ -764,15 +764,15 @@ impl Debugger {
     }
     fn zpg_x(&mut self, mem: &[u8]) -> u8 {
         // zpg, x
-        let zpaddr = mem[1] as u8;
-        self.dis_line.push_str(&format!("${:02X},X", zpaddr as u8));
+        let zpaddr = mem[1];
+        self.dis_line.push_str(&format!("${:02X},X", { zpaddr }));
         1
     }
     fn zpg_y(&mut self, mem: &[u8]) -> u8 {
         // zpg, y
-        let zpaddr = mem[1] as u8;
+        let zpaddr = mem[1];
 
-        self.dis_line.push_str(&format!("${:02X},Y ", zpaddr as u8));
+        self.dis_line.push_str(&format!("${:02X},Y ", { zpaddr }));
         1
     }
 }

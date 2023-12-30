@@ -30,9 +30,24 @@ pub fn syntax() -> Command {
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
+            Command::new("watch")
+                .about("set watch points")
+                .alias("w")
+                .arg(Arg::new("address").required(true))
+                .arg(arg!(-r --read  "watch for read"))
+                .arg(arg!(-w --write  "watch for write"))
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
             Command::new("list_bp")
-                .about("set break points")
+                .about("list break points")
                 .alias("bl")
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("list_wp")
+                .about("list watch points")
+                .alias("wl")
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(

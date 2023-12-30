@@ -19,7 +19,7 @@ use std::{
 // map of filenum to rust file handle
 // static r/w global - so it needs unsafe code
 
-static mut PV_FILES: Lazy<HashMap<u16, File>> = Lazy::new(|| HashMap::new());
+static mut PV_FILES: Lazy<HashMap<u16, File>> = Lazy::new(HashMap::new);
 const PARAVIRT_BASE: u16 = 0xFFF4;
 static PV_HOOKS: [fn(); 6] = [
     ParaVirt::pv_open,
@@ -134,14 +134,14 @@ impl ParaVirt {
                 if let Some(mut file) = PV_FILES.get(&fd) {
                     file.read(&mut buf).unwrap() as u16
                 } else {
-                    Self::set_ax(0xffff as u16);
+                    Self::set_ax(0xffff_u16);
                     return;
                 }
             }
         };
 
         for i in 0..res {
-            Cpu::write_byte(addr + i as u16, buf[i as usize]);
+            Cpu::write_byte(addr + i, buf[i as usize]);
         }
         Self::set_ax(res as u16);
     }
@@ -152,7 +152,7 @@ impl ParaVirt {
 
         let mut buf = vec![0; count as usize];
         for i in 0..count {
-            buf[i as usize] = Cpu::read_byte(addr + i as u16);
+            buf[i as usize] = Cpu::read_byte(addr + i);
         }
         let res = match fd {
             1 => {
