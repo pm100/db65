@@ -1,12 +1,10 @@
 use crate::cpu::Status;
 use crate::debugger::{Debugger, FrameType::*};
 use crate::execute::StopReason;
+use crate::syntax;
 use anyhow::{anyhow, Result};
-use clap::Arg;
-use clap::Command;
-
+use clap::ArgMatches;
 use rustyline::error::ReadlineError;
-
 use rustyline::DefaultEditor;
 use std::collections::VecDeque;
 use std::fs::File;
@@ -78,17 +76,16 @@ impl Shell {
                         lastinput = line.clone();
                     };
                     match self.dispatch(&line) {
-                        Err(e) => println!("{}", e),
-                        Ok(true) => break,
-                        Ok(false) => {}
+                        Err(e) => println!("{}", e), // display error
+                        Ok(true) => break,           // quit was typed
+                        Ok(false) => {}              // continue
                     }
                 }
                 Err(ReadlineError::Interrupted) => {
-                    println!("CTRL-C");
-                    //  break;
+                    println!("CTRL-C"); // pass on to running program?
                 }
                 Err(ReadlineError::Eof) => {
-                    println!("CTRL-D");
+                    println!("quit"); // treat eof as quit
                     break;
                 }
                 Err(err) => {
@@ -103,16 +100,18 @@ impl Shell {
     }
 
     fn dispatch(&mut self, line: &str) -> Result<bool> {
+        // split the line up into args
         let args = shlex::split(line).ok_or(anyhow!("error: Invalid quoting"))?;
-        let matches = self.syntax().try_get_matches_from(args)?;
-        //.map_err(|e| e.to_string())?;
+        // parse with clap
+        let matches = syntax::syntax().try_get_matches_from(args)?;
+        // execute the command
         match matches.subcommand() {
             Some(("break", args)) => {
                 let addr = args.get_one::<String>("address").unwrap();
                 self.debugger.set_break(&addr, false)?;
             }
 
-            Some(("list_bp", args)) => {
+            Some(("list_bp", _)) => {
                 let blist = self.debugger.get_breaks();
                 for i in 0..blist.len() {
                     let bp = self.debugger.get_bp(blist[i]).unwrap();
@@ -124,20 +123,24 @@ impl Shell {
                 let file = args.get_one::<String>("file").unwrap();
                 self.debugger.load_ll(Path::new(file))?;
             }
+
             Some(("load_code", args)) => {
                 let file = args.get_one::<String>("file").unwrap();
                 self.debugger.load_code(Path::new(file))?;
             }
-            Some(("quit", _matches)) => {
+
+            Some(("quit", _)) => {
                 println!("quit");
                 return Ok(true);
             }
+
             Some(("memory", args)) => {
                 let addr_str = args.get_one::<String>("address").unwrap();
                 let addr = self.debugger.convert_addr(&addr_str)?;
                 let chunk = self.debugger.get_chunk(addr, 48)?;
                 self.mem_dump(addr, &chunk);
             }
+
             Some(("run", args)) => {
                 let cmd_args = args
                     .get_many::<String>("args")
@@ -147,23 +150,28 @@ impl Shell {
                 let reason = self.debugger.run(cmd_args)?;
                 self.stop(reason);
             }
-            Some(("go", _args)) => {
+
+            Some(("go", _)) => {
                 let reason = self.debugger.go()?;
                 self.stop(reason);
             }
-            Some(("next", _args)) => {
+
+            Some(("next", _)) => {
                 let reason = self.debugger.next()?;
                 self.stop(reason);
             }
-            Some(("step", _args)) => {
+
+            Some(("step", _)) => {
                 let reason = self.debugger.step()?;
                 self.stop(reason);
             }
+
             Some(("delete_breakpoint", args)) => {
                 let id = args.get_one::<String>("id");
                 self.debugger.delete_breakpoint(id)?;
             }
-            Some(("back_trace", _args)) => {
+
+            Some(("back_trace", _)) => {
                 let stack = self.debugger.read_stack();
                 for i in (0..stack.len()).rev() {
                     let frame = &stack[i];
@@ -176,6 +184,7 @@ impl Shell {
                     }
                 }
             }
+
             Some(("dis", args)) => {
                 let mut addr = if let Some(addr_str) = args.get_one::<String>("address") {
                     self.debugger.convert_addr(&addr_str)?
@@ -200,15 +209,45 @@ impl Shell {
                     self.current_dis_addr = addr;
                 }
             }
-
+            Some(("print", args)) => {
+                let addr_str = args.get_one::<String>("address").unwrap();
+                let addr = self.debugger.convert_addr(&addr_str)?;
+                self.print(addr, args)?;
+            }
             Some((name, _matches)) => unimplemented!("{name}"),
             None => unreachable!("subcommand required"),
         }
 
         Ok(false)
     }
+
+    fn print(&self, addr: u16, args: &ArgMatches) -> Result<()> {
+        if args.contains_id("asstring") {
+            let mut addr = addr;
+            loop {
+                let chunk = self.debugger.get_chunk(addr, 1)?;
+                if chunk[0] == 0 {
+                    break;
+                }
+                print!("{}", chunk[0] as char);
+                addr += 1;
+            }
+            println!();
+        } else if args.contains_id("aspointer") {
+            let chunk = self.debugger.get_chunk(addr, 2)?;
+            println!("{:02x}{:02x} ", chunk[0], chunk[1]);
+        } else {
+            // asint
+
+            let lo = self.debugger.get_chunk(addr, 1)?;
+            let hi = self.debugger.get_chunk(addr + 1, 1)?;
+            println!("{} ", lo[0] as u16 | ((hi[0] as u16) << 8));
+        }
+
+        Ok(())
+    }
     fn mem_dump(&mut self, mut addr: u16, chunk: &[u8]) {
-        //let mut addr = 0;
+        // pretty memory dump
         let mut line = String::new();
         for i in 0..chunk.len() {
             if i % 16 == 0 {
@@ -229,9 +268,9 @@ impl Shell {
         println!("{}", line);
     }
     fn stop(&mut self, reason: StopReason) {
+        // common handler for when execution is interrupted
         match reason {
             StopReason::BreakPoint(bp_addr) => {
-                //println!("breakpoint");
                 let bp = self.debugger.get_bp(bp_addr).unwrap();
                 println!("bp #{} {}", bp.number, bp.symbol);
             }
@@ -239,18 +278,18 @@ impl Shell {
                 println!("exit");
                 return;
             }
-            StopReason::Count | StopReason::Next => {
-                // println!("count");
-            }
+            StopReason::Count | StopReason::Next => {}
             StopReason::Bug(_) => {
                 println!("bug {:?}", reason);
             }
         }
+        // disassemble the current instruction
         let inst_addr = self.debugger.read_pc();
         let mem = self.debugger.get_chunk(self.debugger.read_pc(), 3).unwrap();
         self.debugger.dis(&mem, inst_addr);
-        let stat = Status::from_bits_truncate(self.debugger.read_sr());
 
+        // print pc, dissasembled instruction and registers
+        let stat = Status::from_bits_truncate(self.debugger.read_sr());
         println!(
             "{:04x}:       {:<15} A={:02x} X={:02x} Y={:02x} SP={:02x} SR={:?}",
             self.debugger.read_pc(),
@@ -261,112 +300,5 @@ impl Shell {
             self.debugger.read_sp(),
             stat
         );
-    }
-    fn syntax(&self) -> Command {
-        // strip out usage
-        const PARSER_TEMPLATE: &str = "\
-        {all-args}
-    ";
-        // strip out name/version
-        const APPLET_TEMPLATE: &str = "\
-        {about-with-newline}\n\
-        {usage-heading}\n    {usage}\n\
-        \n\
-        {all-args}{after-help}\
-    ";
-
-        Command::new("db65")
-            .multicall(true)
-            .arg_required_else_help(true)
-            .subcommand_required(true)
-            .subcommand_value_name("Command")
-            .subcommand_help_heading("Commands")
-            .help_template(PARSER_TEMPLATE)
-            .subcommand(
-                Command::new("break")
-                    .about("set break points")
-                    .alias("b")
-                    .arg(Arg::new("address").required(true))
-                    .help_template(APPLET_TEMPLATE),
-            )
-            .subcommand(
-                Command::new("list_bp")
-                    .about("set break points")
-                    .alias("bl")
-                    .help_template(APPLET_TEMPLATE),
-            )
-            .subcommand(
-                Command::new("symbols")
-                    .alias("ll")
-                    .about("load symbol file")
-                    .arg(Arg::new("file").required(true))
-                    .arg_required_else_help(true)
-                    .help_template(APPLET_TEMPLATE),
-            )
-            .subcommand(
-                Command::new("load_code")
-                    .alias("load")
-                    .about("load binary file")
-                    .arg(Arg::new("file").required(true))
-                    .arg_required_else_help(true)
-                    .help_template(APPLET_TEMPLATE),
-            )
-            .subcommand(
-                Command::new("run")
-                    .about("run code")
-                    .arg(Arg::new("address"))
-                    .arg(Arg::new("args").last(true).num_args(0..))
-                    .help_template(APPLET_TEMPLATE),
-            )
-            .subcommand(
-                Command::new("dis")
-                    .about("disassemble")
-                    .arg(Arg::new("address"))
-                    .help_template(APPLET_TEMPLATE),
-            )
-            .subcommand(
-                Command::new("quit")
-                    .aliases(["exit", "q"])
-                    .about("Quit db65")
-                    .help_template(APPLET_TEMPLATE),
-            )
-            .subcommand(
-                Command::new("next")
-                    .alias("n")
-                    .about("next instruction (step over)")
-                    .help_template(APPLET_TEMPLATE),
-            )
-            .subcommand(
-                Command::new("go")
-                    .alias("g")
-                    .about("resume execution")
-                    .help_template(APPLET_TEMPLATE),
-            )
-            .subcommand(
-                Command::new("step")
-                    .alias("s")
-                    .about("next instruction (step into)")
-                    .help_template(APPLET_TEMPLATE),
-            )
-            .subcommand(
-                Command::new("memory")
-                    .aliases(["mem", "m"])
-                    .about("display memory")
-                    .arg(Arg::new("address").required(true))
-                    .help_template(APPLET_TEMPLATE),
-            )
-            .subcommand(
-                Command::new("back_trace")
-                    .alias("bt")
-                    .about("display call stack")
-                    .help_template(APPLET_TEMPLATE),
-            )
-            .subcommand(
-                Command::new("delete_breakpoint")
-                    .alias("bd")
-                    .arg(Arg::new("id").required(false))
-                    .about("delete breakpoint")
-                    .help_template(APPLET_TEMPLATE),
-            )
     }
 }

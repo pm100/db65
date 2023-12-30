@@ -17,9 +17,8 @@ use crate::{cpu::Cpu, execute::StopReason, loader};
 pub struct Debugger {
     symbols: HashMap<String, u16>,
     pub break_points: HashMap<u16, BreakPoint>,
-    //pub break_points: HashMap<u16, BreakPoint>,
+    // pub(crate) watch_points: HashMap<u16, WatchPoint>,
     pub(crate) next_bp: Option<u16>,
-    _loader_sp: u8,
     loader_start: u16,
     pub(crate) dis_line: String,
     pub(crate) ticks: usize,
@@ -45,13 +44,24 @@ pub struct BreakPoint {
     pub(crate) number: usize,
     pub(crate) temp: bool,
 }
+pub enum WatchType {
+    Read,
+    Write,
+    ReadWrite,
+}
+pub struct WatchPoint {
+    pub(crate) addr: u16,
+    pub(crate) symbol: String,
+    pub(crate) number: usize,
+    pub(crate) Watch: bool,
+}
 impl Debugger {
     pub fn new() -> Self {
         Cpu::reset();
         Self {
             symbols: HashMap::new(),
             break_points: HashMap::new(),
-            _loader_sp: 0,
+
             loader_start: 0,
             dis_line: String::new(),
             ticks: 0,
@@ -145,11 +155,9 @@ impl Debugger {
         self.break_points.iter().map(|bp| bp.1.addr).collect()
     }
     pub fn go(&mut self) -> Result<StopReason> {
-        self.core_run()
+        self.execute(0) // 0 = forever
     }
-    fn state(&self) {
-        println!("pc={:04x}", Cpu::read_pc());
-    }
+
     pub fn next(&mut self) -> Result<StopReason> {
         let next_inst = Cpu::read_byte(Cpu::read_pc());
         let reason = if next_inst == 0x20 {
@@ -170,9 +178,7 @@ impl Debugger {
     pub fn step(&mut self) -> Result<StopReason> {
         self.execute(1)
     }
-    fn core_run(&mut self) -> Result<StopReason> {
-        self.execute(0) // 0 = forever
-    }
+
     pub fn run(&mut self, cmd_args: Vec<&String>) -> Result<StopReason> {
         Cpu::write_word(0xFFFC, self.loader_start);
         Cpu::reset();
@@ -181,7 +187,7 @@ impl Debugger {
             Cpu::push_arg(&cmd_args[i])
         }
         self.stack_frames.clear();
-        self.core_run()
+        self.execute(0) // 0 = forever
     }
     pub fn get_chunk(&self, addr: u16, mut len: u16) -> Result<Vec<u8>> {
         let mut v = Vec::new();
@@ -192,6 +198,11 @@ impl Debugger {
         }
         Ok(v)
     }
+
+    // converts a string representing an address into an address
+    // if string starts with '.' it is a symbol lookup
+    // if string starts with '$' it is a hex number
+    // else it is a decimal number
     pub fn convert_addr(&self, addr_str: &str) -> Result<u16> {
         if let Some(sym) = self.symbols.get(addr_str) {
             return Ok(*sym);
@@ -203,6 +214,10 @@ impl Debugger {
         }
         Ok(u16::from_str_radix(addr_str, 10)?)
     }
+
+    // reverse of convert_addr.
+    // tried to find a symbol matching an address
+    // if not found it returns a numberic string
     pub fn symbol_lookup(&self, addr: u16) -> String {
         for (name, sym_addr) in &self.symbols {
             if *sym_addr == addr {

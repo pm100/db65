@@ -2,24 +2,28 @@
     Wrapper around the sim65 emulator.
 
     Provides the calls from db65 to 6502.c
-    - execute_insn to execute one instruction
-    - read_registers to get a pointer to the register block.
+    - ExecuteInsn to execute one instruction
+    - ReadRegisters to get a pointer to the register block.
+    - Reset to reset the cpu
 
     Provides the service routines that 6502.c needs
     - read and write ram
     - paravirt call backs
+    - runtime warnings and errors
 
-    Lots of unsafe code here becuase
+    Lots of unsafe code here because
     - we are doing c calls
     - we have a read / write singleton
 
-    The unsafe is limited to this file
+
 */
 
 use crate::paravirt::ParaVirt;
+use bitflags::bitflags;
 use std::{fmt, os::raw::c_char};
 
 // the one cpu instance
+// this is because the calls to us are 'naked' c calls
 static mut THECPU: Cpu = Cpu {
     ram: [0; 65536],
     shadow: [0; 65536],
@@ -31,15 +35,14 @@ static mut THECPU: Cpu = Cpu {
     arg_array: Vec::new(),
 };
 pub struct Cpu {
-    ram: [u8; 65536],
-    shadow: [u8; 65536],
-    // registers
-    regs: *mut CPURegs,
-    exit: bool,
-    exit_code: u8,
-    sp65_addr: u8,
-    memcheck: Option<u16>,
-    arg_array: Vec<String>,
+    ram: [u8; 65536],       // the actual 6502 ram
+    shadow: [u8; 65536],    // a shadow of the ram, used for memcheck
+    regs: *mut CPURegs,     // a pointer to the register block
+    exit: bool,             // set to true when the 6502 wants to exit
+    exit_code: u8,          // the exit code
+    sp65_addr: u8,          // the location of the cc65 'stack' pointer
+    memcheck: Option<u16>,  // the address of the last memcheck failure
+    arg_array: Vec<String>, // the command line arguments
 }
 
 // our callable functions into sim65
@@ -61,7 +64,6 @@ extern "C" fn MemWriteByte(_addr: u32, _val: u8) {
         THECPU.shadow[_addr as usize] = 1;
     }
 }
-
 #[no_mangle]
 extern "C" fn MemReadWord(addr: u32) -> u32 {
     unsafe {
@@ -71,7 +73,6 @@ extern "C" fn MemReadWord(addr: u32) -> u32 {
         } else if THECPU.shadow[(addr + 1) as usize] == 0 {
             THECPU.memcheck = Some(addr as u16 + 1);
         }
-
         w
     }
 }
@@ -87,7 +88,6 @@ extern "C" fn MemReadByte(addr: u32) -> u8 {
 }
 #[no_mangle]
 extern "C" fn MemReadZPWord(mut addr: u8) -> u16 {
-    //println!("MemReadZPWord");
     unsafe {
         let b1 = THECPU.inner_read_byte(addr as u16) as u16;
         addr = addr.wrapping_add(1);
@@ -106,11 +106,10 @@ extern "C" fn Error(_format: *const c_char, _x: u32, _y: u32) -> u32 {
     return 0;
 }
 #[no_mangle]
-
 extern "C" fn ParaVirtHooks(_regs: *mut CPURegs) {
-    let _pc = Cpu::read_pc();
     ParaVirt::pv_hooks();
 }
+// the structure we gtr a pointer to with ReadRegisters
 #[repr(C)]
 pub struct CPURegs {
     pub ac: u32, /* Accumulator */
@@ -269,26 +268,7 @@ impl Cpu {
         self.ram[(addr + 1) as usize] = (val >> 8) as u8;
     }
 }
-#[test]
-fn regreadwrite() {
-    Cpu::reset();
-    Cpu::write_ac(1);
-    Cpu::write_xr(2);
-    Cpu::write_yr(3);
-    Cpu::write_zr(4);
-    Cpu::write_sr(5);
-    Cpu::write_sp(6);
-    Cpu::write_pc(0x7777);
 
-    assert_eq!(Cpu::read_ac(), 1);
-    assert_eq!(Cpu::read_xr(), 2);
-    assert_eq!(Cpu::read_yr(), 3);
-    assert_eq!(Cpu::read_zr(), 4);
-    assert_eq!(Cpu::read_sr(), 5);
-    assert_eq!(Cpu::read_sp(), 6);
-    assert_eq!(Cpu::read_pc(), 0x7777);
-}
-use bitflags::bitflags;
 bitflags! {
     #[derive(Copy, Clone, Default)]
    pub(crate) struct Status:u8{
@@ -346,4 +326,24 @@ impl fmt::Debug for Status {
         };
         write!(f, "{}", str)
     }
+}
+
+#[test]
+fn regreadwrite() {
+    Cpu::reset();
+    Cpu::write_ac(1);
+    Cpu::write_xr(2);
+    Cpu::write_yr(3);
+    Cpu::write_zr(4);
+    Cpu::write_sr(5);
+    Cpu::write_sp(6);
+    Cpu::write_pc(0x7777);
+
+    assert_eq!(Cpu::read_ac(), 1);
+    assert_eq!(Cpu::read_xr(), 2);
+    assert_eq!(Cpu::read_yr(), 3);
+    assert_eq!(Cpu::read_zr(), 4);
+    assert_eq!(Cpu::read_sr(), 5);
+    assert_eq!(Cpu::read_sp(), 6);
+    assert_eq!(Cpu::read_pc(), 0x7777);
 }

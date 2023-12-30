@@ -9,6 +9,7 @@ mod execute;
 mod loader;
 mod paravirt;
 mod shell;
+mod syntax;
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {

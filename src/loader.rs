@@ -1,3 +1,7 @@
+/*
+    reads binary and loads it into RAM
+*/
+
 use anyhow::{bail, Result};
 use std::fs::File;
 use std::io::{BufReader, Bytes, Read};

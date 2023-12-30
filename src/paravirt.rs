@@ -1,15 +1,26 @@
+/*
+Reimplementation of the PV callbacks in sim65
+
+Works the same except
+- the file io is high level rather than calling into the base raw open, read,write..
+- we dont need a PVInit
+- stdin,stdout and stderr are explicitly dealt with
+
+*/
+use crate::cpu::Cpu;
 use core::panic;
+use once_cell::sync::Lazy;
 use std::{
     collections::HashMap,
     fs::{File, OpenOptions},
     io::{stderr, stdout, Read, Write},
 };
 
-use once_cell::sync::Lazy;
+// map of filenum to rust file handle
+// static r/w global - so it needs unsafe code
 
-use crate::cpu::Cpu;
 static mut PV_FILES: Lazy<HashMap<u16, File>> = Lazy::new(|| HashMap::new());
-
+const PARAVIRT_BASE: u16 = 0xFFF4;
 static PV_HOOKS: [fn(); 6] = [
     ParaVirt::pv_open,
     ParaVirt::pv_close,
@@ -18,10 +29,9 @@ static PV_HOOKS: [fn(); 6] = [
     ParaVirt::pv_args,
     ParaVirt::pv_exit,
 ];
-const PARAVIRT_BASE: u16 = 0xFFF4;
+
 pub struct ParaVirt;
 impl ParaVirt {
-    pub fn _pv_init() {}
     fn pop_arg(incr: u16) -> u16 {
         let sp65_addr = Cpu::get_sp65_addr();
         let sp65 = Cpu::read_word(sp65_addr as u16);
@@ -29,6 +39,7 @@ impl ParaVirt {
         Cpu::write_word(sp65_addr as u16, sp65 + incr);
         val
     }
+
     fn pop() -> u8 {
         let sp = Cpu::read_sp();
         let newsp = sp.wrapping_add(1);
@@ -36,27 +47,30 @@ impl ParaVirt {
         Cpu::write_sp(newsp);
         val
     }
+
     fn set_ax(val: u16) {
         Cpu::write_ac(val as u8);
         Cpu::write_xr(((val >> 8) & 0xff) as u8);
     }
+
     fn get_ax() -> u16 {
         let ac = Cpu::read_ac() as u16;
         let xr = Cpu::read_xr() as u16;
         ac | (xr << 8)
     }
+
     fn pv_open() {
-        let mut mode = Self::pop_arg(Cpu::read_yr() as u16 - 4);
+        let mut _mode = Self::pop_arg(Cpu::read_yr() as u16 - 4);
         let flags = Self::pop_arg(2);
         let mut name = Self::pop_arg(2);
         if Cpu::read_yr() - 4 < 2 {
             /* If the caller didn't supply the mode
              ** argument, use a reasonable default.
              */
-            mode = 0x01 | 0x02;
+            _mode = 0x01 | 0x02;
         }
+        // mode atually ignored at the moment
         let mut name_buf = Vec::new();
-
         loop {
             let c = Cpu::read_byte(name);
             if c == 0 {
@@ -69,9 +83,7 @@ impl ParaVirt {
         let mut opt = OpenOptions::new();
         match flags & 0x03 {
             0x01 => opt.read(true),
-
             0x02 => opt.write(true),
-
             0x03 => opt.read(true).write(true),
             _ => panic!("invalid flags"),
         };
@@ -98,14 +110,10 @@ impl ParaVirt {
         }
     }
     fn pv_close() {
-        //     Regs->AC = close (Regs->AC);
-        //     Regs->XR = errno;
         let fd = ParaVirt::pop_arg(2);
-
         let res = unsafe {
             if let Some(_file) = PV_FILES.get(&fd) {
                 PV_FILES.remove(&fd);
-
                 0
             } else {
                 -1
@@ -116,8 +124,8 @@ impl ParaVirt {
     fn pv_read() {
         let addr = ParaVirt::pop_arg(2);
         let fd = ParaVirt::pop_arg(2);
-
         let count = ParaVirt::get_ax();
+
         let mut buf = vec![0; count as usize];
         let res = if fd == 0 {
             std::io::stdin().read(&mut buf).unwrap() as u16
@@ -172,11 +180,15 @@ impl ParaVirt {
         let sp65_addr = Cpu::get_sp65_addr() as u16;
         let mut sp65 = Cpu::read_word(sp65_addr);
         let argcount = Cpu::get_arg_count() as u16;
+
         // points to array of pointers to argv[n]
         let mut arg_ptr_storage = sp65 - ((Cpu::get_arg_count() + 1) * 2) as u16;
+
         // store that address of argv table where caller asked for it
         Cpu::write_word(caller_arg_addr, arg_ptr_storage);
+
         sp65 = arg_ptr_storage;
+
         // copy the host os arguments contents over
         // sp65 is decremented for each one
         for i in 0..Cpu::get_arg_count() {

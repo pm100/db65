@@ -32,7 +32,17 @@ impl Debugger {
         let counting = count > 0;
         let reason = loop {
             let pc = Cpu::read_pc();
-            // is this a stack manipulation instruction?
+            /*
+            Stack tracking code
+            if we hit a jsr, we push the return address and the stack pointer
+            onto our own tracking stack. If we hit a rts, we pop the frame
+
+            Also tracks push and pulls
+
+            Does not deal with interrupts since sim65 does not support them
+
+            Includes stack balance check logic
+            */
             let inst = Cpu::read_byte(pc);
             match inst {
                 0x20 => {
@@ -88,7 +98,11 @@ impl Debugger {
                 }
                 _ => {}
             };
+
+            // Now execute the instruction
             self.ticks += Cpu::execute_insn() as usize;
+
+            // invalid memory read check
             if self.enable_mem_check {
                 if let Some(addr) = Cpu::get_memcheck() {
                     Cpu::clear_memcheck();
@@ -116,7 +130,7 @@ impl Debugger {
                 }
                 break StopReason::BreakPoint(pc);
             }
-
+            // PVExit called?
             if let Some(exit_code) = Cpu::exit_done() {
                 break StopReason::Exit(exit_code);
             }
