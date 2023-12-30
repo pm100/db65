@@ -136,4 +136,11 @@ pub fn syntax() -> Command {
                 .about("delete breakpoint")
                 .help_template(APPLET_TEMPLATE),
         )
+        .subcommand(
+            Command::new("list_symbols")
+                .alias("ls")
+                .arg(Arg::new("match").required(false))
+                .about("list symbols")
+                .help_template(APPLET_TEMPLATE),
+        )
 }

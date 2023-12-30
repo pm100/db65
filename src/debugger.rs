@@ -5,7 +5,7 @@ the same functionality as the cli shell.
 
 */
 
-use anyhow::{bail, Result};
+use anyhow::{anyhow, bail, Result};
 use std::{
     collections::HashMap,
     fs::File,
@@ -160,14 +160,26 @@ impl Debugger {
                     //al 000000 .sp
                     let mut spl = line.split(' ');
                     let _al = spl.next();
-                    let addr_str = spl.next().unwrap().trim_end();
-                    let name = spl.next().unwrap().trim_end();
-                    let addr = u16::from_str_radix(addr_str, 16).unwrap();
+                    let addr_str = spl.next().ok_or(anyhow!("invalid symbol file"))?.trim_end();
+                    let name = spl.next().ok_or(anyhow!("invalid symbol file"))?.trim_end();
+                    let addr = u16::from_str_radix(addr_str, 16)?;
                     self.symbols.insert(name.to_string(), addr);
                 }
             }
         }
         Ok(())
+    }
+    pub fn get_symbols(&self, filter: Option<&String>) -> Result<Vec<(String, u16)>> {
+        let mut v = Vec::new();
+        for (name, addr) in &self.symbols {
+            if let Some(f) = &filter {
+                if !name.contains(*f) {
+                    continue;
+                }
+            }
+            v.push((name.to_string(), *addr));
+        }
+        Ok(v)
     }
     pub fn load_code(&mut self, file: &Path) -> Result<(u16, u16)> {
         let (sp65_addr, run, _cpu, size) = loader::load_code(file)?;

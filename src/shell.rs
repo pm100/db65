@@ -146,7 +146,13 @@ impl Shell {
                 let file = args.get_one::<String>("file").unwrap();
                 self.debugger.load_ll(Path::new(file))?;
             }
-
+            Some(("list_symbols", args)) => {
+                let mtch = args.get_one::<String>("match");
+                let symbols = self.debugger.get_symbols(mtch)?;
+                for (sym, addr) in symbols {
+                    println!("0x{:04x} {}", addr, sym);
+                }
+            }
             Some(("load_code", args)) => {
                 let file = args.get_one::<String>("file").unwrap();
                 self.debugger.load_code(Path::new(file))?;
