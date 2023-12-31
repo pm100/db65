@@ -59,7 +59,7 @@ jobs:
       with:
         prerelease: ${{ contains(github.ref, '-') }}
         files: |
-              ./target/release/db65
+              ./target/release/mac-db65
 
     - name: ReleaseLinux
       if: matrix.os == 'ubuntu-latest'
