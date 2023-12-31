@@ -38,9 +38,8 @@ jobs:
 
 
 
-
-    - name: ReleaseWin
       if: matrix.os == 'windows-latest'
+    - name: ReleaseWin
       uses: softprops/action-gh-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -48,24 +47,25 @@ jobs:
         prerelease: ${{ contains(github.ref, '-') }}
         files: |
           ./target/release/db65.exe
-          - name: Release
-    - name: ReleaseMac
+
       if: matrix.os == 'macos-latest'
+    - name: ReleaseMac
       uses: softprops/action-gh-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         prerelease: ${{ contains(github.ref, '-') }}
         files: |
-              ./target/release/db65.exe
-    - name: ReleaseLinux
+              ./target/release/db65
+
       if: matrix.os == 'ubuntu-latest'
+    - name: ReleaseLinux
       uses: softprops/action-gh-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         prerelease: ${{ contains(github.ref, '-') }}
         files: |
-                      ./target/release/db65.exe
+            ./target/release/db65
 
       
