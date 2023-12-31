@@ -127,13 +127,13 @@ pub fn syntax() -> Command {
             Command::new("print")
                 .alias("p")
                 .arg(arg!(<address>  "address of value to print"))
-                .arg(arg!(asint: -i "int"))
+                .arg(arg!(asint:     -i   "integer"))
                 .arg(arg!(aspointer: -p   "pointer"))
-                .arg(arg!(asstring: -s   "string"))
+                .arg(arg!(asstring:  -s   "string"))
                 .group(
                     ArgGroup::new("format").args(["asint", "aspointer", "asstring"]), //.required(true), // default to int
                 )
-                .about("delete breakpoint")
+                .about("pretty print of memory")
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(

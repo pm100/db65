@@ -143,7 +143,7 @@ impl Debugger {
             WatchPoint {
                 addr: wp_addr,
                 symbol: save_sym,
-                number: self.break_points.len() + 1,
+                number: self.watch_points.len() + 1,
                 watch: wt,
             },
         );
