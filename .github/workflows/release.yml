@@ -35,10 +35,12 @@ jobs:
     - name: Build
       run: cargo build --release
 
-
-
-
- 
+    - name: rename_binary
+      run: |
+        if [ ${{ matrix.os }} == "macos-latest" ]; then
+          mv ./target/release/db65 ./target/release/mac-db65
+        fi    
+        
     - name: ReleaseWin
       if: matrix.os == 'windows-latest'
       uses: softprops/action-gh-release@v1
