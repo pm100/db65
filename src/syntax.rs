@@ -143,4 +143,13 @@ pub fn syntax() -> Command {
                 .about("list symbols")
                 .help_template(APPLET_TEMPLATE),
         )
+        .subcommand(
+            Command::new("enable")
+                .alias("en")
+                .arg(arg!( -m --memcheck  "enable memory check"))
+                //.arg(arg!(  -t --memtrace  "enable memory trace"))
+                .arg(arg!(  -s --stackcheck  "enable stack check"))
+                .about("enable features")
+                .help_template(APPLET_TEMPLATE),
+        )
 }

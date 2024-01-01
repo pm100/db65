@@ -35,6 +35,7 @@ static mut THECPU: Cpu = Cpu {
     arg_array: Vec::new(),
     memhits: [(false, 0); 6],
     memhitcount: 0,
+    paracall: false,
 };
 pub struct Cpu {
     ram: [u8; 65536],          // the actual 6502 ram
@@ -47,6 +48,7 @@ pub struct Cpu {
     arg_array: Vec<String>,    // the command line arguments
     memhits: [(bool, u16); 6], // used for data watches
     memhitcount: u8,           // entry count in hit array for this instruction
+    pub paracall: bool,        // we just did a pv call
 }
 
 // our callable functions into sim65
@@ -122,7 +124,14 @@ extern "C" fn Error(_format: *const c_char, _x: u32, _y: u32) -> u32 {
 }
 #[no_mangle]
 extern "C" fn ParaVirtHooks(_regs: *mut CPURegs) {
-    ParaVirt::pv_hooks();
+    if ParaVirt::pv_hooks() {
+        unsafe {
+            // we need to know that a PV call was executed
+            // thats becuase the stack will have been changed by the call
+            // but there was no rts instruction,
+            THECPU.paracall = true;
+        }
+    }
 }
 // the structure we gtr a pointer to with ReadRegisters
 #[repr(C)]
@@ -142,11 +151,18 @@ impl Cpu {
             THECPU.sp65_addr = v;
         }
     }
-    pub fn reset_memhits() {
+    pub fn was_paracall() -> bool {
+        unsafe { THECPU.paracall }
+    }
+
+    pub fn post_inst_reset() {
         unsafe {
             THECPU.memhitcount = 0;
+            THECPU.paracall = false;
+            THECPU.memcheck = None;
         }
     }
+
     pub fn get_memhitcount() -> u8 {
         unsafe { THECPU.memhitcount }
     }
@@ -167,11 +183,7 @@ impl Cpu {
     pub fn get_memcheck() -> Option<u16> {
         unsafe { THECPU.memcheck }
     }
-    pub fn clear_memcheck() {
-        unsafe {
-            THECPU.memcheck = None;
-        }
-    }
+
     pub fn set_exit(code: u8) {
         unsafe {
             THECPU.exit = true;
@@ -197,6 +209,8 @@ impl Cpu {
             THECPU.memhitcount = 0;
             THECPU.arg_array.clear();
             Reset();
+            THECPU.memcheck = None;
+            THECPU.paracall = false;
         }
     }
     pub fn execute_insn() -> u32 {
@@ -217,6 +231,7 @@ impl Cpu {
             (*THECPU.regs).sp = v as u32;
         }
     }
+    #[allow(dead_code)]
     pub fn write_yr(v: u8) {
         unsafe {
             (*THECPU.regs).yr = v as u32;

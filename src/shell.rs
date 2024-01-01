@@ -1,7 +1,7 @@
 #![allow(clippy::uninlined_format_args)]
 use crate::cpu::Status;
 use crate::debugger::{Debugger, FrameType::*, WatchType};
-use crate::execute::StopReason;
+use crate::execute::{BugType, StopReason};
 use crate::syntax;
 use anyhow::{anyhow, bail, Result};
 use clap::ArgMatches;
@@ -228,6 +228,10 @@ impl Shell {
                 self.current_dis_addr = addr;
                 for _i in 0..10 {
                     let chunk = self.debugger.get_chunk(addr, 3)?;
+                    if chunk.len() < 3 {
+                        // we ran off the end of memory
+                        break;
+                    }
                     let delta = self.debugger.dis(&chunk, addr);
                     let addr_str = self.debugger.symbol_lookup(addr);
                     if addr_str.starts_with('.') {
@@ -242,6 +246,12 @@ impl Shell {
                 let addr_str = args.get_one::<String>("address").unwrap();
                 let addr = self.debugger.convert_addr(addr_str)?;
                 self.print(addr, args)?;
+            }
+            Some(("enable", args)) => {
+                self.debugger
+                    .enable_mem_check(*args.get_one::<bool>("memcheck").unwrap());
+                self.debugger
+                    .enable_stack_check(*args.get_one::<bool>("stackcheck").unwrap());
             }
             Some((name, _matches)) => unimplemented!("{name}"),
             None => unreachable!("subcommand required"),
@@ -308,9 +318,14 @@ impl Shell {
                 return;
             }
             StopReason::Count | StopReason::Next => {}
-            StopReason::Bug(_) => {
-                println!("bug {:?}", reason);
-            }
+            StopReason::Bug(bug) => match bug {
+                BugType::SpMismatch => {
+                    println!("stack pointer mismatch");
+                }
+                BugType::Memcheck(addr) => {
+                    println!("memory read uninit {:04x}", addr);
+                }
+            },
             StopReason::WatchPoint(addr) => {
                 let wp = self.debugger.get_watch(addr).unwrap();
                 println!("watch #{} 0x{:04x} ({}) ", wp.number, wp.addr, wp.symbol);

@@ -28,9 +28,11 @@ use crate::{
     cpu::Cpu,
     debugger::{Debugger, FrameType, StackFrame, WatchType},
 };
+use anyhow::anyhow;
 impl Debugger {
     pub fn execute(&mut self, mut count: u16) -> Result<StopReason> {
         let counting = count > 0;
+
         let reason = 'main_loop: loop {
             let pc = Cpu::read_pc();
             /*
@@ -60,19 +62,26 @@ impl Debugger {
 
                 0x60 => {
                     // rts
-                    let frame = self.stack_frames.pop().unwrap();
-                    let sp = Cpu::read_sp();
-                    if self.enable_stack_check {
-                        if let FrameType::Jsr((_addr, _ret_addr, fsp, _)) = frame.frame_type {
-                            if sp + 2 != fsp {
-                                break StopReason::Bug(BugType::SpMismatch);
+                    if let Some(frame) = self.stack_frames.pop() {
+                        let sp = Cpu::read_sp();
+                        if self.enable_stack_check {
+                            if let FrameType::Jsr((_addr, _ret_addr, fsp, _)) = frame.frame_type {
+                                if sp + 2 != fsp {
+                                    break StopReason::Bug(BugType::SpMismatch);
+                                }
                             }
                         }
+                    } else if self.enable_stack_check {
+                        break StopReason::Bug(BugType::SpMismatch);
                     }
                 }
                 0x68 => {
                     // pla
-                    let _frame = self.stack_frames.pop().unwrap();
+                    if let Some(_) = self.stack_frames.pop() {
+                        // ok
+                    } else if self.enable_stack_check {
+                        break StopReason::Bug(BugType::SpMismatch);
+                    }
                 }
                 0x48 => {
                     // pha
@@ -84,7 +93,11 @@ impl Debugger {
 
                 0x28 => {
                     // plp
-                    let _frame = self.stack_frames.pop().unwrap();
+                    if let Some(_) = self.stack_frames.pop() {
+                        // ok
+                    } else if self.enable_stack_check {
+                        break StopReason::Bug(BugType::SpMismatch);
+                    }
                 }
                 0x08 => {
                     // php
@@ -95,18 +108,24 @@ impl Debugger {
                 }
                 0x40 => {
                     // rti
-                    let _frame = self.stack_frames.pop().unwrap();
+                    let _ = self.stack_frames.pop();
                 }
                 _ => {}
             };
-            Cpu::reset_memhits();
+
             // Now execute the instruction
             self.ticks += Cpu::execute_insn() as usize;
-
+            // PVExit called?
+            if let Some(exit_code) = Cpu::exit_done() {
+                break StopReason::Exit(exit_code);
+            }
+            if Cpu::was_paracall() {
+                // keep our stack tracker clean
+                self.stack_frames.pop().ok_or(anyhow!("stack underflow"))?;
+            }
             // invalid memory read check
             if self.enable_mem_check {
                 if let Some(addr) = Cpu::get_memcheck() {
-                    Cpu::clear_memcheck();
                     break StopReason::Bug(BugType::Memcheck(addr));
                 }
             }
@@ -154,11 +173,10 @@ impl Debugger {
                 }
                 break StopReason::BreakPoint(pc);
             }
-            // PVExit called?
-            if let Some(exit_code) = Cpu::exit_done() {
-                break StopReason::Exit(exit_code);
-            }
+
+            Cpu::post_inst_reset();
         };
+        Cpu::post_inst_reset(); // will have been missed on a break
         Ok(reason)
     }
 }

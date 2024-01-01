@@ -210,20 +210,20 @@ impl ParaVirt {
         Self::set_ax(argcount);
     }
     fn pv_exit() {
-        let code = ParaVirt::pop();
+        let code = Cpu::read_ac();
         Cpu::set_exit(code);
     }
 
-    pub fn pv_hooks() {
+    pub fn pv_hooks() -> bool {
         let pc = Cpu::read_pc();
         if pc < PARAVIRT_BASE || pc >= PARAVIRT_BASE + PV_HOOKS.len() as u16 {
-            return;
+            return false;
         }
-
         /* Call paravirtualization hook */
         PV_HOOKS[(pc - PARAVIRT_BASE) as usize]();
         let lo = Self::pop();
         let hi = Self::pop();
         Cpu::write_pc((lo as u16 | ((hi as u16) << 8)) + 1);
+        true
     }
 }

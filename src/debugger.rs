@@ -120,7 +120,12 @@ impl Debugger {
         );
         Ok(())
     }
-
+    pub fn enable_stack_check(&mut self, enable: bool) {
+        self.enable_stack_check = enable;
+    }
+    pub fn enable_mem_check(&mut self, enable: bool) {
+        self.enable_mem_check = enable;
+    }
     pub fn set_watch(&mut self, addr_str: &str, wt: WatchType) -> Result<()> {
         let wp_addr;
         let first_char = addr_str.chars().next().unwrap();
@@ -294,6 +299,7 @@ impl Debugger {
     pub fn read_yr(&self) -> u8 {
         Cpu::read_yr()
     }
+    #[allow(dead_code)]
     pub fn read_zr(&self) -> u8 {
         Cpu::read_zr()
     }

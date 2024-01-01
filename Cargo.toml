@@ -20,3 +20,4 @@ cc = "1.0.83"
 
 [profile.release]
 strip = true 
+lto = true
