@@ -11,8 +11,8 @@ It understands the cc65 parameter stack
 - next / step
 - watch points to trap reads or write to memory locations
 - smart stack display
-- WIP - stack mismatch detection
-- WIP - reading memory not written to
+- stack mismatch detection
+- reading memory not written to
 - TODO - cc65 param stack awareness
 
 # building
