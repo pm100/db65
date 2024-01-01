@@ -117,6 +117,7 @@ impl Debugger {
             self.ticks += Cpu::execute_insn() as usize;
             // PVExit called?
             if let Some(exit_code) = Cpu::exit_done() {
+                self.run_done = false;
                 break StopReason::Exit(exit_code);
             }
             if Cpu::was_paracall() {

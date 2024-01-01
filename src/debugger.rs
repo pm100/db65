@@ -26,6 +26,7 @@ pub struct Debugger {
     pub(crate) enable_stack_check: bool,
     pub(crate) enable_mem_check: bool,
     load_name: String,
+    pub(crate) run_done: bool,
 }
 #[derive(Debug)]
 pub(crate) enum FrameType {
@@ -71,6 +72,7 @@ impl Debugger {
             enable_mem_check: false,
             next_bp: None,
             load_name: String::new(),
+            run_done: false,
         }
     }
     pub fn delete_breakpoint(&mut self, id_opt: Option<&String>) -> Result<()> {
@@ -203,7 +205,11 @@ impl Debugger {
         self.watch_points.iter().map(|wp| wp.1.addr).collect()
     }
     pub fn go(&mut self) -> Result<StopReason> {
-        self.execute(0) // 0 = forever
+        if !self.run_done {
+            self.run(vec![])
+        } else {
+            self.execute(0) // 0 = forever
+        }
     }
 
     pub fn next(&mut self) -> Result<StopReason> {
