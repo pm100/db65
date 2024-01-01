@@ -59,7 +59,14 @@ extern "C" {
     pub fn Reset();
 }
 extern "C" {
+
     pub fn ReadRegisters() -> *mut CPURegs;
+}
+
+extern "C" {
+    static mut CPU: u16;
+    // decalred static in 6502.c so we cant do this
+    // static mut Regs: CPURegs;
 }
 
 // callback from sim65 to us
@@ -146,6 +153,11 @@ pub struct CPURegs {
 }
 
 impl Cpu {
+    pub fn set_cpu(cpu: u16) {
+        unsafe {
+            CPU = cpu;
+        }
+    }
     pub fn sp65_addr(v: u8) {
         unsafe {
             THECPU.sp65_addr = v;

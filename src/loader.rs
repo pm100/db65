@@ -29,6 +29,7 @@ pub fn load_code(file: &Path) -> Result<(u8, u16, u8, u16)> {
     if cpu != 0 && cpu != 1 {
         bail!("invalid header");
     }
+    Cpu::set_cpu(cpu as u16);
     // sp65_addr is the location of the cc65 'stack pointer'
     // not to be confused with the 6502 sp
 
