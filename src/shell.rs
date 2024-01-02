@@ -181,16 +181,25 @@ impl Shell {
             }
 
             Some(("go", _)) => {
+                if !self.debugger.run_done {
+                    bail!("program not running");
+                };
                 let reason = self.debugger.go()?;
                 self.stop(reason);
             }
 
             Some(("next", _)) => {
+                if !self.debugger.run_done {
+                    bail!("program not running");
+                };
                 let reason = self.debugger.next()?;
                 self.stop(reason);
             }
 
             Some(("step", _)) => {
+                if !self.debugger.run_done {
+                    bail!("program not running");
+                };
                 let reason = self.debugger.step()?;
                 self.stop(reason);
             }
@@ -254,6 +263,9 @@ impl Shell {
                     .enable_stack_check(*args.get_one::<bool>("stackcheck").unwrap());
             }
             Some(("finish", _)) => {
+                if !self.debugger.run_done {
+                    bail!("program not running");
+                };
                 let reason = self.debugger.finish()?;
                 self.stop(reason);
             }
