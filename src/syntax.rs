@@ -62,6 +62,7 @@ pub fn syntax() -> Command {
             Command::new("load_code")
                 .alias("load")
                 .about("load binary file")
+                .arg(arg!(-r --raw  "raw binary file"))
                 .arg(Arg::new("file").required(true))
                 .arg_required_else_help(true)
                 .help_template(APPLET_TEMPLATE),
@@ -69,7 +70,7 @@ pub fn syntax() -> Command {
         .subcommand(
             Command::new("run")
                 .about("run code")
-                .arg(Arg::new("address"))
+                .arg(arg!(-x --execute_address <addr> "address to execute"))
                 .arg(Arg::new("args").last(true).num_args(0..))
                 .help_template(APPLET_TEMPLATE),
         )
@@ -156,6 +157,13 @@ pub fn syntax() -> Command {
             Command::new("finish")
                 .alias("fin")
                 .about("run till current function returns")
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("trace")
+                .alias("tr")
+                .about("trace execution")
+                //                arg(arg!( -m --memtrace  "enable memory trace"))
                 .help_template(APPLET_TEMPLATE),
         )
 }

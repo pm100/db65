@@ -10,17 +10,18 @@ Its responsible for running the code . It detects
 It runs until it stops. It the returns a StopReason
 */
 use anyhow::Result;
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum StopReason {
     BreakPoint(u16),
     WatchPoint(u16),
     Exit(u8),
     Count,
     Next,
+    Step,
     Bug(BugType),
     Finish,
 }
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum BugType {
     SpMismatch,
     Memcheck(u16),
@@ -123,6 +124,10 @@ impl Debugger {
             // Now execute the instruction
             self.ticks += Cpu::execute_insn() as usize;
 
+            if Cpu::break_hit() {
+                break StopReason::Next;
+            }
+
             // PVExit called?
             if let Some(exit_code) = Cpu::exit_done() {
                 self.run_done = false;
@@ -130,7 +135,7 @@ impl Debugger {
             }
 
             if Cpu::was_paracall() {
-                // a PV call opos the stack but we do not see an rts
+                // a PV call pops the stack but we do not see an rts
                 // so we have a dangling stack frame - pop it
                 self.stack_frames.pop().ok_or(anyhow!("stack underflow"))?;
             }
@@ -161,7 +166,7 @@ impl Debugger {
                 // next stepping bp
                 if next == pc {
                     self.next_bp = None;
-                    break StopReason::Next;
+                    break StopReason::Step;
                 }
             }
 

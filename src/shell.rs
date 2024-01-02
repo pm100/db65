@@ -155,7 +155,11 @@ impl Shell {
             }
             Some(("load_code", args)) => {
                 let file = args.get_one::<String>("file").unwrap();
-                self.debugger.load_code(Path::new(file))?;
+                if args.get_flag("raw") {
+                    self.debugger.load_raw(Path::new(file))?;
+                } else {
+                    self.debugger.load_code(Path::new(file))?;
+                }
             }
 
             Some(("quit", _)) => {
@@ -175,8 +179,13 @@ impl Shell {
                     .get_many::<String>("args")
                     .map(Iterator::collect)
                     .unwrap_or_default();
-
-                let reason = self.debugger.run(cmd_args)?;
+                let start_addr = if let Some(addr_str) = args.get_one::<String>("execute_address") {
+                    let addr = self.debugger.convert_addr(addr_str)?;
+                    Some(addr)
+                } else {
+                    None
+                };
+                let reason = self.debugger.run(cmd_args, start_addr)?;
                 self.stop(reason);
             }
 
@@ -257,6 +266,13 @@ impl Shell {
                 let reason = self.debugger.finish()?;
                 self.stop(reason);
             }
+            Some(("trace", _)) => loop {
+                let reason = self.debugger.step()?;
+                self.stop(reason.clone());
+                if reason != StopReason::Step {
+                    break;
+                }
+            },
             Some((name, _matches)) => unimplemented!("{name}"),
             None => unreachable!("subcommand required"),
         }
@@ -321,7 +337,7 @@ impl Shell {
                 println!("exit");
                 return;
             }
-            StopReason::Count | StopReason::Next => {}
+            StopReason::Count | StopReason::Next | StopReason::Step => {}
             StopReason::Bug(bug) => match bug {
                 BugType::SpMismatch => {
                     println!("stack pointer mismatch");

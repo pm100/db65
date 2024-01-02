@@ -29,7 +29,7 @@ static PV_HOOKS: [fn(); 6] = [
     ParaVirt::pv_args,
     ParaVirt::pv_exit,
 ];
-
+static mut PV_LINEBUFFER: Lazy<String> = Lazy::new(String::new);
 pub struct ParaVirt;
 impl ParaVirt {
     fn pop_arg(incr: u16) -> u16 {
@@ -217,6 +217,12 @@ impl ParaVirt {
     pub fn pv_hooks() -> bool {
         let pc = Cpu::read_pc();
         if pc < PARAVIRT_BASE || pc >= PARAVIRT_BASE + PV_HOOKS.len() as u16 {
+            if Self::kim_hooks(pc) {
+                let lo = Self::pop();
+                let hi = Self::pop();
+                Cpu::write_pc((lo as u16 | ((hi as u16) << 8)) + 1);
+                return true;
+            }
             return false;
         }
         /* Call paravirtualization hook */
@@ -225,5 +231,31 @@ impl ParaVirt {
         let hi = Self::pop();
         Cpu::write_pc((lo as u16 | ((hi as u16) << 8)) + 1);
         true
+    }
+
+    pub fn kim_hooks(pc: u16) -> bool {
+        match pc {
+            0x1e5a => unsafe {
+                /*Cpu::trap_rdkey*/
+                if PV_LINEBUFFER.len() == 0 {
+                    let mut line = String::new();
+                    let r = std::io::stdin().read_line(&mut line).unwrap();
+                    *PV_LINEBUFFER = line[0..r - 2].to_string();
+                    //trace!("rdkey. buff={} len={}", self.buffer, self.buffer.len());
+                    PV_LINEBUFFER.push('\r');
+                }
+                let val = PV_LINEBUFFER.remove(0) as u8;
+                // trace!("return {:02X}", val);
+                Cpu::write_ac(val);
+                true
+            },
+            0x1ea0 => {
+                /*Cpu::trap_cout*/
+                print!("{}", Cpu::read_ac() as char);
+                std::io::stdout().flush().unwrap();
+                true
+            }
+            _ => false,
+        }
     }
 }

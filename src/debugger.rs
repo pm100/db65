@@ -7,13 +7,18 @@ the same functionality as the cli shell.
 
 use anyhow::{anyhow, bail, Result};
 use std::{
+    alloc::System,
     collections::HashMap,
     fs::File,
     io::{BufRead, BufReader},
     path::Path,
 };
 
-use crate::{cpu::Cpu, execute::StopReason, loader};
+use crate::{
+    cpu::{Cpu, SystemType},
+    execute::StopReason,
+    loader,
+};
 pub struct Debugger {
     symbols: HashMap<String, u16>,
     pub break_points: HashMap<u16, BreakPoint>,
@@ -199,6 +204,16 @@ impl Debugger {
 
         Ok((size, run))
     }
+    pub fn load_raw(&mut self, file: &Path) -> Result<()> {
+        let size = loader::load_raw(file)?;
+        // println!("size={:x}, entry={:x}, cpu={}", size, run, cpu);
+        Cpu::sp65_addr(0);
+        let arg0 = file.file_name().unwrap().to_str().unwrap().to_string();
+        self.load_name = arg0;
+        self.loader_start = 0;
+
+        Ok(())
+    }
     pub fn get_breaks(&self) -> Vec<u16> {
         self.break_points.iter().map(|bp| bp.1.addr).collect()
     }
@@ -207,14 +222,16 @@ impl Debugger {
     }
     pub fn go(&mut self) -> Result<StopReason> {
         if !self.run_done {
-            self.run(vec![])
+            self.run(vec![], None)
         } else {
             self.execute(0) // 0 = forever
         }
     }
     pub fn finish(&mut self) -> Result<StopReason> {
+        // find the top jsr on the our tracking stack
         for i in (0..self.stack_frames.len()).rev() {
             if let FrameType::Jsr(_) = self.stack_frames[i].frame_type {
+                // stop when it gets popped
                 self.stack_frames[i].stop_on_pop = true;
             }
         }
@@ -244,8 +261,16 @@ impl Debugger {
         self.execute(1)
     }
 
-    pub fn run(&mut self, cmd_args: Vec<&String>) -> Result<StopReason> {
-        Cpu::write_word(0xFFFC, self.loader_start);
+    pub fn run(&mut self, cmd_args: Vec<&String>, start_addr: Option<u16>) -> Result<StopReason> {
+        Cpu::write_word(
+            0xFFFC,
+            if let Some(addr) = start_addr {
+                Cpu::set_system(SystemType::Kim1);
+                addr
+            } else {
+                self.loader_start
+            },
+        );
         Cpu::reset();
         Cpu::push_arg(&self.load_name);
         for arg in &cmd_args {

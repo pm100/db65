@@ -20,7 +20,13 @@
 
 use crate::paravirt::ParaVirt;
 use bitflags::bitflags;
-use std::{fmt, os::raw::c_char};
+use std::{ffi::CStr, fmt, os::raw::c_char};
+#[derive(PartialEq, Copy, Clone)]
+pub enum SystemType {
+    Sim6502,
+    Sim65c02,
+    Kim1,
+}
 
 // the one cpu instance
 // this is because the calls to us are 'naked' c calls
@@ -36,6 +42,9 @@ static mut THECPU: Cpu = Cpu {
     memhits: [(false, 0); 6],
     memhitcount: 0,
     paracall: false,
+    ram_top: 0xffff,
+    system: SystemType::Sim6502,
+    brk: false,
 };
 pub struct Cpu {
     ram: [u8; 65536],          // the actual 6502 ram
@@ -49,6 +58,9 @@ pub struct Cpu {
     memhits: [(bool, u16); 6], // used for data watches
     memhitcount: u8,           // entry count in hit array for this instruction
     pub paracall: bool,        // we just did a pv call
+    ram_top: u16,              // the top of ram
+    pub system: SystemType,    // what are we emulating
+    pub brk: bool,             // break
 }
 
 // our callable functions into sim65
@@ -125,8 +137,16 @@ extern "C" fn Warning(_format: *const c_char, _x: u32, _y: u32) -> u32 {
     0
 }
 #[no_mangle]
-extern "C" fn Error(_format: *const c_char, _x: u32, _y: u32) -> u32 {
-    println!("Error");
+extern "C" fn Error(format: *const c_char, _x: u32, _y: u32) -> u32 {
+    let c_str = unsafe {
+        assert!(!format.is_null());
+
+        CStr::from_ptr(format)
+    };
+    println!("Error {:} {:02x} {:04x}", c_str.to_str().unwrap(), _x, _y);
+    unsafe {
+        THECPU.brk = true;
+    }
     0
 }
 #[no_mangle]
@@ -158,6 +178,13 @@ impl Cpu {
             CPU = cpu;
         }
     }
+    pub fn break_hit() -> bool {
+        unsafe {
+            let b = THECPU.brk;
+            THECPU.brk = false;
+            b
+        }
+    }
     pub fn sp65_addr(v: u8) {
         unsafe {
             THECPU.sp65_addr = v;
@@ -166,7 +193,14 @@ impl Cpu {
     pub fn was_paracall() -> bool {
         unsafe { THECPU.paracall }
     }
-
+    pub fn set_system(system: SystemType) {
+        unsafe {
+            THECPU.system = system;
+            if SystemType::Kim1 == system {
+                THECPU.ram_top = 0x8000;
+            }
+        }
+    }
     pub fn post_inst_reset() {
         unsafe {
             THECPU.memhitcount = 0;
@@ -305,6 +339,9 @@ impl Cpu {
     }
 
     fn inner_read_byte(&mut self, addr: u16) -> u8 {
+        if addr > self.ram_top || (self.system == SystemType::Kim1 && addr == 0x1740) {
+            return 0xff;
+        }
         self.ram[addr as usize]
     }
     fn inner_read_word(&mut self, addr: u16) -> u16 {
