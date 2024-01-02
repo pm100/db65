@@ -253,6 +253,10 @@ impl Shell {
                 self.debugger
                     .enable_stack_check(*args.get_one::<bool>("stackcheck").unwrap());
             }
+            Some(("finish", _)) => {
+                let reason = self.debugger.finish()?;
+                self.stop(reason);
+            }
             Some((name, _matches)) => unimplemented!("{name}"),
             None => unreachable!("subcommand required"),
         }
@@ -330,6 +334,7 @@ impl Shell {
                 let wp = self.debugger.get_watch(addr).unwrap();
                 println!("watch #{} 0x{:04x} ({}) ", wp.number, wp.addr, wp.symbol);
             }
+            StopReason::Finish => {}
         }
         // disassemble the current instruction
         let inst_addr = self.debugger.read_pc();

@@ -152,4 +152,10 @@ pub fn syntax() -> Command {
                 .about("enable features")
                 .help_template(APPLET_TEMPLATE),
         )
+        .subcommand(
+            Command::new("finish")
+                .alias("fin")
+                .about("run till current function returns")
+                .help_template(APPLET_TEMPLATE),
+        )
 }

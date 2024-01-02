@@ -18,6 +18,7 @@ pub enum StopReason {
     Count,
     Next,
     Bug(BugType),
+    Finish,
 }
 #[derive(Debug, Clone)]
 pub enum BugType {
@@ -35,18 +36,17 @@ impl Debugger {
 
         let reason = 'main_loop: loop {
             let pc = Cpu::read_pc();
-            /*
-            Stack tracking code
+
+            /*==============================================================
+                            Stack tracking code
             if we hit a jsr, we push the return address and the stack pointer
             onto our own tracking stack. If we hit a rts, we pop the frame
 
             Also tracks push and pulls
+            ===============================================================*/
 
-            Does not deal with interrupts since sim65 does not support them
-
-            Includes stack balance check logic
-            */
             let inst = Cpu::read_byte(pc);
+            let mut finish = false;
             match inst {
                 0x20 => {
                     // jsr
@@ -57,6 +57,7 @@ impl Debugger {
                     let addr = lo as u16 | ((hi as u16) << 8);
                     self.stack_frames.push(StackFrame {
                         frame_type: FrameType::Jsr((addr, pc + 3, sp, 0)),
+                        stop_on_pop: false,
                     });
                 }
 
@@ -64,6 +65,10 @@ impl Debugger {
                     // rts
                     if let Some(frame) = self.stack_frames.pop() {
                         let sp = Cpu::read_sp();
+                        if frame.stop_on_pop {
+                            // defer til after we execute the rts
+                            finish = true;
+                        }
                         if self.enable_stack_check {
                             if let FrameType::Jsr((_addr, _ret_addr, fsp, _)) = frame.frame_type {
                                 if sp + 2 != fsp {
@@ -88,6 +93,7 @@ impl Debugger {
                     let ac = Cpu::read_ac();
                     self.stack_frames.push(StackFrame {
                         frame_type: FrameType::Pha(ac),
+                        stop_on_pop: false,
                     });
                 }
 
@@ -104,6 +110,7 @@ impl Debugger {
                     let sr = Cpu::read_sr();
                     self.stack_frames.push(StackFrame {
                         frame_type: FrameType::Php(sr),
+                        stop_on_pop: false,
                     });
                 }
                 0x40 => {
@@ -115,29 +122,41 @@ impl Debugger {
 
             // Now execute the instruction
             self.ticks += Cpu::execute_insn() as usize;
+
             // PVExit called?
             if let Some(exit_code) = Cpu::exit_done() {
                 self.run_done = false;
                 break StopReason::Exit(exit_code);
             }
+
             if Cpu::was_paracall() {
-                // keep our stack tracker clean
+                // a PV call opos the stack but we do not see an rts
+                // so we have a dangling stack frame - pop it
                 self.stack_frames.pop().ok_or(anyhow!("stack underflow"))?;
             }
+
             // invalid memory read check
             if self.enable_mem_check {
                 if let Some(addr) = Cpu::get_memcheck() {
                     break StopReason::Bug(BugType::Memcheck(addr));
                 }
             }
+
+            // limited number of instructions?
             if counting {
                 count -= 1;
                 if count == 0 {
                     break StopReason::Count;
                 }
             }
-            //  did we hit a breakpoint?
+            // did we just pop a stop_on_pop frame?
+            if finish {
+                break StopReason::Finish;
+            }
+
             let pc = Cpu::read_pc();
+
+            // did we step over a function call?
             if let Some(next) = self.next_bp {
                 // next stepping bp
                 if next == pc {
@@ -168,6 +187,8 @@ impl Debugger {
                     }
                 }
             }
+
+            //  did we hit a breakpoint?
             if let Some(bp) = self.break_points.get(&pc) {
                 if bp.temp {
                     self.break_points.remove(&pc);
@@ -175,6 +196,7 @@ impl Debugger {
                 break StopReason::BreakPoint(pc);
             }
 
+            // post instruction clean up
             Cpu::post_inst_reset();
         };
         Cpu::post_inst_reset(); // will have been missed on a break

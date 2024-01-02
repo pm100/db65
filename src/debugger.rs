@@ -37,6 +37,7 @@ pub(crate) enum FrameType {
 #[derive(Debug)]
 pub struct StackFrame {
     pub(crate) frame_type: FrameType,
+    pub(crate) stop_on_pop: bool,
 }
 #[derive(Debug, Clone)]
 pub struct BreakPoint {
@@ -211,7 +212,14 @@ impl Debugger {
             self.execute(0) // 0 = forever
         }
     }
-
+    pub fn finish(&mut self) -> Result<StopReason> {
+        for i in (0..self.stack_frames.len()).rev() {
+            if let FrameType::Jsr(_) = self.stack_frames[i].frame_type {
+                self.stack_frames[i].stop_on_pop = true;
+            }
+        }
+        self.execute(0) // 0 = forever
+    }
     pub fn next(&mut self) -> Result<StopReason> {
         let next_inst = Cpu::read_byte(Cpu::read_pc());
 
