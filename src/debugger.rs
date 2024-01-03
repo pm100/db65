@@ -6,6 +6,7 @@ the same functionality as the cli shell.
 */
 
 use anyhow::{anyhow, bail, Result};
+use evalexpr::Value;
 use std::{
     collections::HashMap,
     fs::File,
@@ -13,9 +14,9 @@ use std::{
     path::Path,
 };
 
-use crate::{cpu::Cpu, execute::StopReason, loader};
+use crate::{cpu::Cpu, execute::StopReason, expr::DB65Context, loader};
 pub struct Debugger {
-    symbols: HashMap<String, u16>,
+    pub(crate) symbols: HashMap<String, u16>,
     pub break_points: HashMap<u16, BreakPoint>,
     pub(crate) watch_points: HashMap<u16, WatchPoint>,
     pub(crate) next_bp: Option<u16>,
@@ -27,6 +28,7 @@ pub struct Debugger {
     pub(crate) enable_mem_check: bool,
     load_name: String,
     pub(crate) run_done: bool,
+    pub(crate) expr_context: DB65Context,
 }
 #[derive(Debug)]
 pub(crate) enum FrameType {
@@ -74,6 +76,7 @@ impl Debugger {
             next_bp: None,
             load_name: String::new(),
             run_done: false,
+            expr_context: DB65Context::new(),
         }
     }
     pub fn delete_breakpoint(&mut self, id_opt: Option<&String>) -> Result<()> {
@@ -175,6 +178,12 @@ impl Debugger {
                 }
             }
         }
+        self.expr_context.symbols.clear();
+        for (k, v) in &self.symbols {
+            self.expr_context
+                .symbols
+                .insert(k.clone(), Value::Int(*v as i64));
+        }
         Ok(())
     }
     pub fn get_symbols(&self, filter: Option<&String>) -> Result<Vec<(String, u16)>> {
@@ -252,6 +261,7 @@ impl Debugger {
             Cpu::push_arg(arg)
         }
         self.stack_frames.clear();
+        self.run_done = true;
         self.execute(0) // 0 = forever
     }
     pub fn get_chunk(&self, addr: u16, mut len: u16) -> Result<Vec<u8>> {

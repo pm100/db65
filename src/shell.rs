@@ -111,10 +111,12 @@ impl Shell {
         match matches.subcommand() {
             Some(("break", args)) => {
                 let addr = args.get_one::<String>("address").unwrap();
+                let addr = &self.expand_expr(&addr)?;
                 self.debugger.set_break(addr, false)?;
             }
             Some(("watch", args)) => {
                 let addr = args.get_one::<String>("address").unwrap();
+                let addr = &self.expand_expr(&addr)?;
                 let read = *args.get_one::<bool>("read").unwrap();
                 let write = *args.get_one::<bool>("write").unwrap();
                 let rw = if read && write {
@@ -165,6 +167,7 @@ impl Shell {
 
             Some(("memory", args)) => {
                 let addr_str = args.get_one::<String>("address").unwrap();
+                let addr_str = &self.expand_expr(&addr_str)?;
                 let addr = self.debugger.convert_addr(addr_str)?;
                 let chunk = self.debugger.get_chunk(addr, 48)?;
                 self.mem_dump(addr, &chunk);
@@ -225,7 +228,8 @@ impl Shell {
 
             Some(("dis", args)) => {
                 let mut addr = if let Some(addr_str) = args.get_one::<String>("address") {
-                    self.debugger.convert_addr(addr_str)?
+                    let addr_str = self.expand_expr(&addr_str)?;
+                    self.debugger.convert_addr(&addr_str)?
                 } else {
                     let mut a = self.current_dis_addr;
                     if a == 0 {
@@ -253,7 +257,8 @@ impl Shell {
             }
             Some(("print", args)) => {
                 let addr_str = args.get_one::<String>("address").unwrap();
-                let addr = self.debugger.convert_addr(addr_str)?;
+                let addr_str = self.expand_expr(&addr_str)?;
+                let addr = self.debugger.convert_addr(&addr_str)?;
                 self.print(addr, args)?;
             }
             Some(("enable", args)) => {
@@ -261,6 +266,11 @@ impl Shell {
                     .enable_mem_check(*args.get_one::<bool>("memcheck").unwrap());
                 self.debugger
                     .enable_stack_check(*args.get_one::<bool>("stackcheck").unwrap());
+            }
+            Some(("expr", args)) => {
+                let expr = args.get_one::<String>("expression").unwrap();
+                let ans = self.expand_expr(expr)?;
+                println!("{:}", ans);
             }
             Some(("finish", _)) => {
                 if !self.debugger.run_done {
@@ -275,7 +285,14 @@ impl Shell {
 
         Ok(false)
     }
-
+    fn expand_expr(&mut self, exp: &str) -> Result<String> {
+        if let Some(exp) = exp.strip_prefix("=") {
+            let res = self.debugger.evaluate(exp)?;
+            Ok(format!("${:04x}", res))
+        } else {
+            Ok(exp.to_string())
+        }
+    }
     fn print(&self, addr: u16, args: &ArgMatches) -> Result<()> {
         if *args.get_one::<bool>("asstring").unwrap() {
             let mut addr = addr;
