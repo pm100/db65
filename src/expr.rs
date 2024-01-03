@@ -81,6 +81,17 @@ impl Context for DB65Context {
                 let word = Cpu::read_word(arg as u16);
                 Ok(evalexpr::Value::Int(word as i64))
             }
+            "@b" => {
+                let arg = arg.as_int()?;
+                if arg > u16::MAX as i64 {
+                    return Err(evalexpr::EvalexprError::WrongFunctionArgumentAmount {
+                        expected: RangeInclusive::new(0, 0xffff),
+                        actual: arg as usize,
+                    });
+                }
+                let byte = Cpu::read_byte(arg as u16);
+                Ok(evalexpr::Value::Int(byte as i64))
+            }
 
             _ => Err(evalexpr::EvalexprError::FunctionIdentifierNotFound(
                 key.to_string(),
