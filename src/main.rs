@@ -8,10 +8,12 @@ mod cpu;
 mod debugger;
 mod dis;
 mod execute;
+mod expr;
 mod loader;
 mod paravirt;
 mod shell;
 mod syntax;
+
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {

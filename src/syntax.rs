@@ -158,4 +158,10 @@ pub fn syntax() -> Command {
                 .about("run till current function returns")
                 .help_template(APPLET_TEMPLATE),
         )
+        .subcommand(
+            Command::new("expr")
+                .arg(arg!(<expression>  "expression to evaluate"))
+                .about("run till current function returns")
+                .help_template(APPLET_TEMPLATE),
+        )
 }
