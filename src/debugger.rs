@@ -261,6 +261,7 @@ impl Debugger {
             Cpu::push_arg(arg)
         }
         self.stack_frames.clear();
+        self.run_done = true;
         self.execute(0) // 0 = forever
     }
     pub fn get_chunk(&self, addr: u16, mut len: u16) -> Result<Vec<u8>> {

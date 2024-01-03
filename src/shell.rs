@@ -257,7 +257,8 @@ impl Shell {
             }
             Some(("print", args)) => {
                 let addr_str = args.get_one::<String>("address").unwrap();
-                let addr = self.debugger.convert_addr(addr_str)?;
+                let addr_str = self.expand_expr(&addr_str)?;
+                let addr = self.debugger.convert_addr(&addr_str)?;
                 self.print(addr, args)?;
             }
             Some(("enable", args)) => {
@@ -269,7 +270,7 @@ impl Shell {
             Some(("expr", args)) => {
                 let expr = args.get_one::<String>("expression").unwrap();
                 let ans = self.expand_expr(expr)?;
-                println!("{:?}", ans);
+                println!("{:}", ans);
             }
             Some(("finish", _)) => {
                 if !self.debugger.run_done {
