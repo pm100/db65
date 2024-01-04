@@ -211,6 +211,18 @@ Print either an integer (16 bit), a string or a pointer
 
 Displays the current 6502 stack
 
+### reg
+
+set register value
+
+`>> reg xr 42`
+
+### write_memory (wm)
+
+Write one byte to memory
+
+`>> wm 0x1234 0x44`
+
 ### expr
 
 Expression evaluator. Anywhere that an address can be given you can have an expression
