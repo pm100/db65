@@ -168,7 +168,7 @@ impl Shell {
             Some(("memory", args)) => {
                 let addr_str = args.get_one::<String>("address").unwrap();
                 let addr_str = &self.expand_expr(&addr_str)?;
-                let addr = self.debugger.convert_addr(addr_str)?;
+                let (addr, _) = self.debugger.convert_addr(addr_str)?;
                 let chunk = self.debugger.get_chunk(addr, 48)?;
                 self.mem_dump(addr, &chunk);
             }
@@ -229,7 +229,7 @@ impl Shell {
             Some(("dis", args)) => {
                 let mut addr = if let Some(addr_str) = args.get_one::<String>("address") {
                     let addr_str = self.expand_expr(&addr_str)?;
-                    self.debugger.convert_addr(&addr_str)?
+                    self.debugger.convert_addr(&addr_str)?.0
                 } else {
                     let mut a = self.current_dis_addr;
                     if a == 0 {
@@ -258,7 +258,7 @@ impl Shell {
             Some(("print", args)) => {
                 let addr_str = args.get_one::<String>("address").unwrap();
                 let addr_str = self.expand_expr(&addr_str)?;
-                let addr = self.debugger.convert_addr(&addr_str)?;
+                let (addr, _) = self.debugger.convert_addr(&addr_str)?;
                 self.print(addr, args)?;
             }
             Some(("enable", args)) => {

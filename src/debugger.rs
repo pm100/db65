@@ -99,22 +99,7 @@ impl Debugger {
         Ok(())
     }
     pub fn set_break(&mut self, addr_str: &str, temp: bool) -> Result<()> {
-        let bp_addr;
-        let first_char = addr_str.chars().next().unwrap();
-        let mut save_sym = String::new();
-        if first_char == '.' {
-            if let Some(sym) = self.symbols.get(addr_str) {
-                save_sym = addr_str.to_string();
-                bp_addr = *sym;
-            } else {
-                bail!("unknown symbol")
-            }
-        } else if first_char == '$' {
-            let rest = addr_str[1..].to_string();
-            bp_addr = u16::from_str_radix(&rest, 16)?;
-        } else {
-            bp_addr = addr_str.parse::<u16>()?;
-        }
+        let (bp_addr, save_sym) = self.convert_addr(addr_str)?;
         self.break_points.insert(
             bp_addr,
             BreakPoint {
@@ -133,22 +118,7 @@ impl Debugger {
         self.enable_mem_check = enable;
     }
     pub fn set_watch(&mut self, addr_str: &str, wt: WatchType) -> Result<()> {
-        let wp_addr;
-        let first_char = addr_str.chars().next().unwrap();
-        let mut save_sym = String::new();
-        if first_char == '.' {
-            if let Some(sym) = self.symbols.get(addr_str) {
-                save_sym = addr_str.to_string();
-                wp_addr = *sym;
-            } else {
-                bail!("unknown symbol")
-            }
-        } else if first_char == '$' {
-            let rest = addr_str[1..].to_string();
-            wp_addr = u16::from_str_radix(&rest, 16)?;
-        } else {
-            wp_addr = addr_str.parse::<u16>()?;
-        }
+        let (wp_addr, save_sym) = self.convert_addr(addr_str)?;
         self.watch_points.insert(
             wp_addr,
             WatchPoint {
@@ -278,15 +248,19 @@ impl Debugger {
     // if string starts with '.' it is a symbol lookup
     // if string starts with '$' it is a hex number
     // else it is a decimal number
-    pub fn convert_addr(&self, addr_str: &str) -> Result<u16> {
-        if let Some(sym) = self.symbols.get(addr_str) {
-            return Ok(*sym);
+    pub fn convert_addr(&self, addr_str: &str) -> Result<(u16, String)> {
+        if addr_str.chars().next() == Some('.') {
+            if let Some(sym) = self.symbols.get(addr_str) {
+                return Ok((*sym, addr_str.to_string()));
+            } else {
+                bail!("Symbol {} not found", addr_str);
+            }
         }
 
         if let Some(hex) = addr_str.strip_prefix('$') {
-            return Ok(u16::from_str_radix(hex, 16)?);
+            return Ok((u16::from_str_radix(hex, 16)?, String::new()));
         }
-        Ok(addr_str.parse::<u16>()?)
+        Ok((addr_str.parse::<u16>()?, String::new()))
     }
 
     // reverse of convert_addr.
