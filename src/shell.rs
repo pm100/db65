@@ -314,7 +314,7 @@ impl Shell {
     fn expand_expr(&mut self, exp: &str) -> Result<String> {
         if let Some(exp) = exp.strip_prefix('=') {
             let res = self.debugger.evaluate(exp)?;
-            Ok(format!("${:04x}", res))
+            Ok(format!("${:x}", res))
         } else {
             Ok(exp.to_string())
         }
