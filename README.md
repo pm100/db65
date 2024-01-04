@@ -126,6 +126,7 @@ Sets a breakpoint
 Examples
 
 `>> b ._main`
+
 `>> b $27ba`
 
 ### bl
@@ -162,7 +163,7 @@ run until return from current function call.
 
 ### watch (w)
 
-watch for memory read or write. Will breaak on the read of write of a location
+watch for memory read or write. Will break on the read or write of a location
 
 `>> w -r -w <addr>`
 
@@ -214,9 +215,9 @@ Displays the current 6502 stack
 
 Expression evaluator. Anywhere that an address can be given you can have an expression
 
-The expr command evaluates an express, this can be useful for instecting thingss or just checking expression syntax
+The expr command evaluates an expression, this can be useful for inspecting things or just checking expression syntax
 
-an expression starts with '='. YOu can then have numbers, symbols, parantheses, registers, plus deference operations
+An expression starts with '='. You can then have numbers, symbols, parantheses, registers, plus dereference operations
 
  - `=xr` returns the x register
  - `=.ptr1+0x20` returns that symbol plus 0x20
@@ -224,11 +225,17 @@ an expression starts with '='. YOu can then have numbers, symbols, parantheses, 
  - `=@ @(.ptr1)` returns what the ptr1 at ptr1 points to
  - `=@(.ptr1+xr)` returns what ptr1 + xr points to
 
+`@` is the dereference operation for a word
+
+`@b` is the deref of a byte
+
+
  Useful quickies
 
  `dis =pc`
  `expr =xr`
- 
+
+ Note that you may need to enclose the whole expression in quotes so that it doesnt look like command arguments to the line parser
 
 ### quit
 
