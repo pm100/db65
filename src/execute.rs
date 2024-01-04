@@ -76,7 +76,8 @@ impl Debugger {
                                 }
                             } else {
                                 // wrong frame type
-                                break StopReason::Bug(BugType::SpMismatch);
+                                // same issue with longjmp
+                                //break StopReason::Bug(BugType::SpMismatch);
                             }
                         }
                     } else if self.enable_stack_check {
@@ -88,7 +89,11 @@ impl Debugger {
                     if let Some(fr) = self.stack_frames.pop() {
                         // ok - but it should be a push frame
                         if let FrameType::Jsr((_, _, _, _)) = fr.frame_type {
-                            break StopReason::Bug(BugType::SpMismatch);
+                            if self.enable_stack_check {
+                                // note - longjmp hits this becuase it manually
+                                // pops a return address off the stack using pla,pla
+                                //break StopReason::Bug(BugType::SpMismatch);
+                            }
                         }
                     } else if self.enable_stack_check {
                         break StopReason::Bug(BugType::SpMismatch);
@@ -139,7 +144,7 @@ impl Debugger {
             }
 
             if Cpu::was_paracall() {
-                // a PV call opos the stack but we do not see an rts
+                // a PV call pops the stack but we do not see an rts
                 // so we have a dangling stack frame - pop it
                 self.stack_frames.pop().ok_or(anyhow!("stack underflow"))?;
             }
