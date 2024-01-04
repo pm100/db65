@@ -161,7 +161,7 @@ pub fn syntax() -> Command {
         .subcommand(
             Command::new("expr")
                 .arg(arg!(<expression>  "expression to evaluate"))
-                .about("run till current function returns")
+                .about("evaluate address expression")
                 .help_template(APPLET_TEMPLATE),
         )
 }
