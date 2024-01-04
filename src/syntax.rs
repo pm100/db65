@@ -155,7 +155,22 @@ pub fn syntax() -> Command {
         .subcommand(
             Command::new("finish")
                 .alias("fin")
-                .about("Run untill current function returns")
+                .about("Run until current function returns")
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("reg")
+                .about("Set register value")
+                .arg(arg!(<register> "register to set (ac,zr,yr,sp,pc,sr"))
+                .arg(arg!(<value> "value, either integer or expression"))
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("write_memory")
+                .alias("wm")
+                .about("Write to memory")
+                .arg(arg!(<address> "address to write to"))
+                .arg(arg!(<value> "value, either integer or expression"))
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(

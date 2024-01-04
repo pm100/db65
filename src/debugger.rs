@@ -243,6 +243,9 @@ impl Debugger {
         }
         Ok(v)
     }
+    pub fn write_byte(&mut self, addr: u16, val: u8) {
+        Cpu::write_byte(addr, val);
+    }
 
     // converts a string representing an address into an address
     // if string starts with '.' it is a symbol lookup
@@ -257,7 +260,11 @@ impl Debugger {
             }
         }
 
-        if let Some(hex) = addr_str.strip_prefix('$') {
+        if let Some(hex) = addr_str.strip_prefix('$').or_else(|| {
+            addr_str
+                .strip_prefix("0x")
+                .or_else(|| addr_str.strip_prefix("0X"))
+        }) {
             return Ok((u16::from_str_radix(hex, 16)?, String::new()));
         }
         Ok((addr_str.parse::<u16>()?, String::new()))

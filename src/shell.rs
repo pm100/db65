@@ -279,6 +279,32 @@ impl Shell {
                 let reason = self.debugger.finish()?;
                 self.stop(reason);
             }
+            Some(("reg", args)) => {
+                let regname = args.get_one::<String>("register").unwrap();
+                let value_str = args.get_one::<String>("value").unwrap();
+                let value_str = self.expand_expr(value_str)?;
+                let value = self.debugger.convert_addr(&value_str)?.0;
+                match regname.as_str() {
+                    "ac" => self.debugger.write_ac(value as u8),
+                    "xr" => self.debugger.write_xr(value as u8),
+                    "yr" => self.debugger.write_yr(value as u8),
+                    "sp" => self.debugger.write_sp(value as u8),
+                    "sr" => self.debugger.write_sr(value as u8),
+                    "pc" => self.debugger.write_pc(value),
+                    _ => bail!("unknown register {}", regname),
+                }
+            }
+            Some(("write_memory", args)) => {
+                let addr_str = args.get_one::<String>("address").unwrap();
+                let addr_str = self.expand_expr(addr_str)?;
+                let addr = self.debugger.convert_addr(&addr_str)?.0;
+
+                let value_str = args.get_one::<String>("value").unwrap();
+                let value_str = self.expand_expr(value_str)?;
+                let value = self.debugger.convert_addr(&value_str)?.0;
+
+                self.debugger.write_byte(addr, value as u8);
+            }
             Some((name, _matches)) => unimplemented!("{name}"),
             None => unreachable!("subcommand required"),
         }
@@ -307,7 +333,7 @@ impl Shell {
             println!();
         } else if *args.get_one::<bool>("aspointer").unwrap() {
             let chunk = self.debugger.get_chunk(addr, 2)?;
-            println!("{:02x}{:02x} ", chunk[1], chunk[0]);
+            println!("0x{:02x}{:02x} ", chunk[1], chunk[0]);
         } else {
             // asint
 
