@@ -399,13 +399,14 @@ impl Shell {
         // print pc, dissasembled instruction and registers
         let stat = Status::from_bits_truncate(self.debugger.read_sr());
         println!(
-            "{:04x}:       {:<15} A={:02x} X={:02x} Y={:02x} SP={:02x} SR={:?}",
+            "{:04x}:       {:<15} ac=${:02x} xr=${:02x} yr=${:02x} sp=${:02x} sr=${:02x} {:?}",
             self.debugger.read_pc(),
             self.debugger.dis_line,
             self.debugger.read_ac(),
             self.debugger.read_xr(),
             self.debugger.read_yr(),
             self.debugger.read_sp(),
+            stat,
             stat
         );
     }

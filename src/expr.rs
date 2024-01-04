@@ -35,6 +35,7 @@ pub struct DB65Context {
     xr: Value,
     yr: Value,
     sp: Value,
+    sr: Value,
     pc: Value,
 }
 
@@ -46,6 +47,7 @@ impl DB65Context {
             xr: Value::Int(0),
             yr: Value::Int(0),
             sp: Value::Int(0),
+            sr: Value::Int(0),
             pc: Value::Int(0),
         }
     }
@@ -54,6 +56,7 @@ impl DB65Context {
         self.xr = Value::Int(Cpu::read_xr() as i64);
         self.yr = Value::Int(Cpu::read_yr() as i64);
         self.sp = Value::Int(Cpu::read_sp() as i64);
+        self.sr = Value::Int(Cpu::read_sr() as i64);
         self.pc = Value::Int(Cpu::read_pc() as i64);
     }
 }
@@ -65,6 +68,7 @@ impl Context for DB65Context {
             "yr" => Some(&self.yr),
             "sp" => Some(&self.sp),
             "pc" => Some(&self.pc),
+            "sr" => Some(&self.sr),
             _ => self.symbols.get(key),
         }
     }

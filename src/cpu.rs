@@ -345,16 +345,17 @@ impl fmt::Debug for Status {
             str.push('n');
         };
         if self.contains(Status::OVF) {
-            str.push('O');
+            str.push('V');
         } else {
-            str.push('o');
+            str.push('v');
         };
         str.push('-');
-        if self.contains(Status::BREAK) {
-            str.push('B');
-        } else {
-            str.push('b');
-        };
+        str.push('-');
+        // if self.contains(Status::BREAK) {
+        //     str.push('B');
+        // } else {
+        //     str.push('b');
+        // };
 
         if self.contains(Status::DECIMAL) {
             str.push('D');
@@ -366,15 +367,15 @@ impl fmt::Debug for Status {
         } else {
             str.push('i');
         };
-        if self.contains(Status::CARRY) {
-            str.push('C');
-        } else {
-            str.push('c');
-        };
         if self.contains(Status::ZERO) {
             str.push('Z');
         } else {
             str.push('z');
+        };
+        if self.contains(Status::CARRY) {
+            str.push('C');
+        } else {
+            str.push('c');
         };
         write!(f, "{}", str)
     }
