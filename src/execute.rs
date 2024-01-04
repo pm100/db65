@@ -64,16 +64,19 @@ impl Debugger {
                 0x60 => {
                     // rts
                     if let Some(frame) = self.stack_frames.pop() {
-                        let sp = Cpu::read_sp();
                         if frame.stop_on_pop {
                             // defer til after we execute the rts
                             finish = true;
                         }
                         if self.enable_stack_check {
                             if let FrameType::Jsr((_addr, _ret_addr, fsp, _)) = frame.frame_type {
+                                let sp = Cpu::read_sp();
                                 if sp + 2 != fsp {
                                     break StopReason::Bug(BugType::SpMismatch);
                                 }
+                            } else {
+                                // wrong frame type
+                                break StopReason::Bug(BugType::SpMismatch);
                             }
                         }
                     } else if self.enable_stack_check {
@@ -82,8 +85,11 @@ impl Debugger {
                 }
                 0x68 => {
                     // pla
-                    if let Some(_) = self.stack_frames.pop() {
-                        // ok
+                    if let Some(fr) = self.stack_frames.pop() {
+                        // ok - but it should be a push frame
+                        if let FrameType::Jsr((_, _, _, _)) = fr.frame_type {
+                            break StopReason::Bug(BugType::SpMismatch);
+                        }
                     } else if self.enable_stack_check {
                         break StopReason::Bug(BugType::SpMismatch);
                     }
@@ -99,8 +105,11 @@ impl Debugger {
 
                 0x28 => {
                     // plp
-                    if let Some(_) = self.stack_frames.pop() {
-                        // ok
+                    if let Some(fr) = self.stack_frames.pop() {
+                        // ok - but it should be a push frame
+                        if let FrameType::Jsr((_, _, _, _)) = fr.frame_type {
+                            break StopReason::Bug(BugType::SpMismatch);
+                        }
                     } else if self.enable_stack_check {
                         break StopReason::Bug(BugType::SpMismatch);
                     }

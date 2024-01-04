@@ -111,7 +111,7 @@ impl Debugger {
     pub fn evaluate(&mut self, expr: &str) -> Result<u16> {
         // reload register values
         self.expr_context.reload();
-        eval_int_with_context(expr, &mut self.expr_context)
+        eval_int_with_context(expr, &self.expr_context)
             .map_err(|e| anyhow!(e))
             .map(|v| v as u16)
     }

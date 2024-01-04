@@ -111,12 +111,12 @@ impl Shell {
         match matches.subcommand() {
             Some(("break", args)) => {
                 let addr = args.get_one::<String>("address").unwrap();
-                let addr = &self.expand_expr(&addr)?;
+                let addr = &self.expand_expr(addr)?;
                 self.debugger.set_break(addr, false)?;
             }
             Some(("watch", args)) => {
                 let addr = args.get_one::<String>("address").unwrap();
-                let addr = &self.expand_expr(&addr)?;
+                let addr = &self.expand_expr(addr)?;
                 let read = *args.get_one::<bool>("read").unwrap();
                 let write = *args.get_one::<bool>("write").unwrap();
                 let rw = if read && write {
@@ -167,7 +167,7 @@ impl Shell {
 
             Some(("memory", args)) => {
                 let addr_str = args.get_one::<String>("address").unwrap();
-                let addr_str = &self.expand_expr(&addr_str)?;
+                let addr_str = &self.expand_expr(addr_str)?;
                 let (addr, _) = self.debugger.convert_addr(addr_str)?;
                 let chunk = self.debugger.get_chunk(addr, 48)?;
                 self.mem_dump(addr, &chunk);
@@ -228,7 +228,7 @@ impl Shell {
 
             Some(("dis", args)) => {
                 let mut addr = if let Some(addr_str) = args.get_one::<String>("address") {
-                    let addr_str = self.expand_expr(&addr_str)?;
+                    let addr_str = self.expand_expr(addr_str)?;
                     self.debugger.convert_addr(&addr_str)?.0
                 } else {
                     let mut a = self.current_dis_addr;
@@ -257,7 +257,7 @@ impl Shell {
             }
             Some(("print", args)) => {
                 let addr_str = args.get_one::<String>("address").unwrap();
-                let addr_str = self.expand_expr(&addr_str)?;
+                let addr_str = self.expand_expr(addr_str)?;
                 let (addr, _) = self.debugger.convert_addr(&addr_str)?;
                 self.print(addr, args)?;
             }
@@ -286,7 +286,7 @@ impl Shell {
         Ok(false)
     }
     fn expand_expr(&mut self, exp: &str) -> Result<String> {
-        if let Some(exp) = exp.strip_prefix("=") {
+        if let Some(exp) = exp.strip_prefix('=') {
             let res = self.debugger.evaluate(exp)?;
             Ok(format!("${:04x}", res))
         } else {

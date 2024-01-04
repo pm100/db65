@@ -249,7 +249,7 @@ impl Debugger {
     // if string starts with '$' it is a hex number
     // else it is a decimal number
     pub fn convert_addr(&self, addr_str: &str) -> Result<(u16, String)> {
-        if addr_str.chars().next() == Some('.') {
+        if addr_str.starts_with('.') {
             if let Some(sym) = self.symbols.get(addr_str) {
                 return Ok((*sym, addr_str.to_string()));
             } else {
