@@ -62,7 +62,7 @@ jobs:
               ./target/release/mac-db65
 
     - name: ReleaseLinux
-      if: matrix.os == 'ubuntu-latest-not'
+      if: matrix.os == 'ubuntu-latest'
       uses: softprops/action-gh-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -99,6 +99,10 @@ jobs:
                 with:
                   command: build
                   args: --release --target x86_64-unknown-linux-musl
+
+              - name: rename_musl_binary
+                run: |
+                    mv ./target/release/db65 ./target/release/musl-db65
 
               - name: ReleaseMUSL
                 uses: softprops/action-gh-release@v1
