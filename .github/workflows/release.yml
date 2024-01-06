@@ -102,7 +102,7 @@ jobs:
 
               - name: rename_musl_binary
                 run: |
-                    mv ./target/release/db65 ./target/release/musl-db65
+                    mv ./target/x86_64-unknown-linux-musl/release/db65 ./target/x86_64-unknown-linux-musl/release/musl-db65
 
               - name: ReleaseMUSL
                 uses: softprops/action-gh-release@v1
@@ -111,4 +111,4 @@ jobs:
                 with:
                     prerelease: ${{ contains(github.ref, '-') }}
                     files: |
-                      ./target/release/db65
+                      ./target/x86_64-unknown-linux-musl/release/musl-db65
