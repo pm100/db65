@@ -79,7 +79,12 @@ impl ParaVirt {
             name_buf.push(c);
             name += 1;
         }
-        let name_str = String::from_utf8(name_buf).unwrap();
+        let name_str = if let Ok(nm) = String::from_utf8(name_buf) {
+            nm
+        } else {
+            Self::set_ax(0xffff);
+            return;
+        };
         let mut opt = OpenOptions::new();
         match flags & 0x03 {
             0x01 => opt.read(true),
@@ -128,14 +133,21 @@ impl ParaVirt {
 
         let mut buf = vec![0; count as usize];
         let res = if fd == 0 {
-            std::io::stdin().read(&mut buf).unwrap() as u16
+            if let Ok(count) = std::io::stdin().read(&mut buf) {
+                count as u16
+            } else {
+                0
+            }
         } else {
             unsafe {
                 if let Some(mut file) = PV_FILES.get(&fd) {
-                    file.read(&mut buf).unwrap() as u16
+                    if let Ok(count) = file.read(&mut buf) {
+                        count as u16
+                    } else {
+                        0
+                    }
                 } else {
-                    Self::set_ax(0xffff_u16);
-                    return;
+                    0
                 }
             }
         };
@@ -156,19 +168,32 @@ impl ParaVirt {
         }
         let res = match fd {
             1 => {
-                let count = stdout().write(&buf).unwrap();
-                stdout().flush().unwrap();
-                count
+                if let Ok(count) = stdout().write(&buf) {
+                    let _ = stdout().flush();
+                    count
+                } else {
+                    0
+                }
             }
             2 => {
-                let count = stderr().write(&buf).unwrap();
-                stderr().flush().unwrap();
-                count
+                if let Ok(count) = stderr().write(&buf) {
+                    let _ = stderr().flush().unwrap();
+                    count
+                } else {
+                    0
+                }
             }
 
             _ => unsafe {
-                let mut file = PV_FILES.get(&fd).unwrap();
-                file.write(&buf).unwrap()
+                if let Some(mut file) = PV_FILES.get(&fd) {
+                    if let Ok(count) = file.write(&buf) {
+                        count
+                    } else {
+                        0
+                    }
+                } else {
+                    0
+                }
             },
         };
 

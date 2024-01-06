@@ -249,5 +249,14 @@ An expression starts with '='. You can then have numbers, symbols, parantheses, 
 
  Note that you may need to enclose the whole expression in quotes so that it doesnt look like command arguments to the line parser
 
+expression evaluator uses the excellent evalexpr crate https://github.com/ISibboI/evalexpr.
+The docs https://docs.rs/evalexpr/latest/evalexpr/  show all the operators and functions that can be used.
+Of note
+
+- bitand, bitor....
+- if
+- shl, shr
+
+
 ### quit
 
