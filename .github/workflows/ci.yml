@@ -21,6 +21,10 @@ jobs:
     - name: Run tests
       run: cargo test --verbose
 
+    - name: Setup MUSL
+      run: |
+        sudo apt-get -qq install musl-tools
+    
     - name: Install stable toolchain
       uses: actions-rs/toolchain@v1
       with:
