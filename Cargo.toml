@@ -18,6 +18,7 @@ shlex = "1.2.0"
 thiserror = "1.0.51"
 
 [build-dependencies]
+built = {version = "0.7.1", features=["git2"]}
 cc = "1.0.83"
 
 [profile.release]

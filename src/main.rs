@@ -13,7 +13,9 @@ mod loader;
 mod paravirt;
 mod shell;
 mod syntax;
-
+pub mod built_info {
+    include!(concat!(env!("OUT_DIR"), "/built.rs"));
+}
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]
 struct Cli {
@@ -31,7 +33,11 @@ struct Cli {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-
+    println!(
+        "db65 {} ({})",
+        built_info::PKG_VERSION,
+        built_info::GIT_COMMIT_HASH_SHORT.unwrap_or_default()
+    );
     let mut sh = Shell::new();
     sh.shell(cli.command_file, &cli.args)?;
 
