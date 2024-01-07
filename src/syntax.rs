@@ -185,21 +185,21 @@ can be used to test an expression and also to inspect values.
 
 Examples:
 expr =0x20          evaluates to 0x20 (redundant)
-expr =xr            the xr register
-expr =xr+1          the xr register plus 1
-dis =pc-6           disassemble from pc-6
-m =xr+0x20          display memory at xr+0x20
-m .ptr              display memory at pointer (raw symbols just work anyway)
-m =@(.ptr)          dereference a pointer
-m =@(.ptr+0x20)     do math on a pointer
-m =@(.p1+(2*yr))    more math
-p -s =@(.sreg)      print a string pointed to by sreg, sreg+1 
+expr =.xr           the xr register
+expr =.xr+1         the xr register plus 1
+dis =.pc-6          disassemble from pc-6
+m =.xr+0x20         display memory at xr+0x20
+m ptr               display memory at pointer (raw symbols just work anyway)
+m =@(ptr)           dereference a pointer
+m =@(ptr+0x20)      do math on a pointer
+m =@(p1+(2*.yr))    more math
+p -s =@(sreg)       print a string pointed to by sreg, sreg+1 
 
 @ is the dereference operator for a word 
 @b is the dereference operator for a byte 
 
 Note if there are spaces in the expression, you must quote it:
-mem '=@(.ptr + 0x20)'
+mem '=@(ptr + 0x20)'
                     
                     "#,
                 ),

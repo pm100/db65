@@ -6,6 +6,7 @@ the same functionality as the cli shell.
 */
 
 use anyhow::{anyhow, bail, Result};
+use core::num;
 use evalexpr::Value;
 use std::{
     collections::HashMap,
@@ -144,7 +145,11 @@ impl Debugger {
                     let addr_str = spl.next().ok_or(anyhow!("invalid symbol file"))?.trim_end();
                     let name = spl.next().ok_or(anyhow!("invalid symbol file"))?.trim_end();
                     let addr = u16::from_str_radix(addr_str, 16)?;
-                    self.symbols.insert(name.to_string(), addr);
+                    if let Some(nm) = name.strip_prefix('.') {
+                        self.symbols.insert(nm.to_string(), addr);
+                    } else {
+                        self.symbols.insert(name.to_string(), addr);
+                    }
                 }
             }
         }
@@ -252,14 +257,7 @@ impl Debugger {
     // if string starts with '$' it is a hex number
     // else it is a decimal number
     pub fn convert_addr(&self, addr_str: &str) -> Result<(u16, String)> {
-        if addr_str.starts_with('.') {
-            if let Some(sym) = self.symbols.get(addr_str) {
-                return Ok((*sym, addr_str.to_string()));
-            } else {
-                bail!("Symbol {} not found", addr_str);
-            }
-        }
-
+        // is this a hex number?
         if let Some(hex) = addr_str.strip_prefix('$').or_else(|| {
             addr_str
                 .strip_prefix("0x")
@@ -267,7 +265,18 @@ impl Debugger {
         }) {
             return Ok((u16::from_str_radix(hex, 16)?, String::new()));
         }
-        Ok((addr_str.parse::<u16>()?, String::new()))
+
+        // a decimal number?
+        if addr_str.chars().next().unwrap().is_digit(10) {
+            return Ok((addr_str.parse::<u16>()?, String::new()));
+        }
+
+        // is it a symbol?
+        if let Some(sym) = self.symbols.get(addr_str) {
+            return Ok((*sym, addr_str.to_string()));
+        } else {
+            bail!("Symbol {} not found", addr_str);
+        }
     }
 
     // reverse of convert_addr.

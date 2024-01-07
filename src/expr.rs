@@ -63,12 +63,12 @@ impl DB65Context {
 impl Context for DB65Context {
     fn get_value(&self, key: &str) -> Option<&Value> {
         match key {
-            "ac" => Some(&self.ac),
-            "xr" => Some(&self.xr),
-            "yr" => Some(&self.yr),
-            "sp" => Some(&self.sp),
-            "pc" => Some(&self.pc),
-            "sr" => Some(&self.sr),
+            ".ac" => Some(&self.ac),
+            ".xr" => Some(&self.xr),
+            ".yr" => Some(&self.yr),
+            ".sp" => Some(&self.sp),
+            ".pc" => Some(&self.pc),
+            ".sr" => Some(&self.sr),
             _ => self.symbols.get(key),
         }
     }
