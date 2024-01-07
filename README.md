@@ -14,7 +14,17 @@ It understands the cc65 parameter stack
 - stack mismatch detection
 - reading memory not written to
 - TODO - cc65 param stack awareness
+- arbitray address expression
+  
+## precompiled binaries
 
+Are in the releases section here https://github.com/pm100/db65/releases
+
+- db65 is linux gclibc version compiled on latest ubuntu
+- musl-db65 is MUSL linux binary, use this if you get glibc errors
+- mac-db65 is macos version
+- db65.exe is windows 64 bit version
+  
 ## building
 Its written in rust so you need rust installed to build
 
