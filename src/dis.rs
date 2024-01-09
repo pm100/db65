@@ -676,7 +676,7 @@ impl Debugger {
         let offset = mem[1] as i8;
         inst_addr += 2;
         let target = inst_addr.wrapping_add_signed(offset as i16);
-        let sym = self.symbol_lookup(target);
+        let sym = self.symbol_lookup(target).unwrap();
         self.dis_line.push_str(&sym.to_string());
         1
     }
@@ -688,16 +688,16 @@ impl Debugger {
             let lo = mem[1] as u16;
             let hi = mem[2] as u16;
             let addr = (hi << 8) | lo;
-            let sym = self.symbol_lookup(addr);
+            let sym = self.symbol_lookup(addr).unwrap();
             self.dis_line.push_str(&sym);
             return 2;
         }
-        
+
         match inst & 0b00011100 {
             0b0000_0100 => {
                 // zero page
                 let lo = mem[1];
-                let sym = self.zp_symbol_lookup(lo);
+                let sym = self.zp_symbol_lookup(lo).unwrap();
                 self.dis_line.push_str(&sym);
                 1
             }
@@ -706,7 +706,7 @@ impl Debugger {
                 let lo = mem[1] as u16;
                 let hi = mem[2] as u16;
                 let addr = (hi << 8) | lo;
-                let sym = self.symbol_lookup(addr);
+                let sym = self.symbol_lookup(addr).unwrap();
                 self.dis_line.push_str(&sym);
                 2
             }
@@ -733,7 +733,7 @@ impl Debugger {
             0b0001_0000 => {
                 // (ind),y
                 let zpaddr = mem[1];
-                let sym = self.zp_symbol_lookup(zpaddr);
+                let sym = self.zp_symbol_lookup(zpaddr).unwrap();
 
                 self.dis_line.push_str(&format!("({}),Y", sym));
                 1
@@ -741,7 +741,7 @@ impl Debugger {
             0b0000_0000 => {
                 // (ind,x)
                 let zpaddr = mem[1];
-                let sym = self.zp_symbol_lookup(zpaddr);
+                let sym = self.zp_symbol_lookup(zpaddr).unwrap();
                 self.dis_line.push_str(&format!("({},X)", sym));
                 1
             }
@@ -752,7 +752,7 @@ impl Debugger {
         let lo = mem[1] as u16;
         let hi = mem[2] as u16;
         let addr = (hi << 8) | lo;
-        let sym = self.symbol_lookup(addr);
+        let sym = self.symbol_lookup(addr).unwrap();
         self.dis_line.push_str(&format!("{},Y", sym));
         2
     }

@@ -10,12 +10,13 @@ use core::num;
 use evalexpr::Value;
 use std::{
     collections::HashMap,
+    fmt::Debug,
     fs::File,
     io::{BufRead, BufReader},
     path::Path,
 };
 
-use crate::{cpu::Cpu, execute::StopReason, expr::DB65Context, loader};
+use crate::{cpu::Cpu, debugdb::DebugData, execute::StopReason, expr::DB65Context, loader};
 pub struct Debugger {
     pub(crate) symbols: HashMap<String, u16>,
     pub break_points: HashMap<u16, BreakPoint>,
@@ -30,6 +31,7 @@ pub struct Debugger {
     load_name: String,
     pub(crate) run_done: bool,
     pub(crate) expr_context: DB65Context,
+    pub(crate) dbgdb: DebugData,
 }
 #[derive(Debug)]
 pub(crate) enum FrameType {
@@ -78,6 +80,7 @@ impl Debugger {
             load_name: String::new(),
             run_done: false,
             expr_context: DB65Context::new(),
+            dbgdb: DebugData::new().unwrap(),
         }
     }
     pub fn delete_breakpoint(&mut self, id_opt: Option<&String>) -> Result<()> {
@@ -161,6 +164,12 @@ impl Debugger {
         }
         Ok(())
     }
+    pub fn load_dbg(&mut self, file: &Path) -> Result<()> {
+        let fd = File::open(file)?;
+        let mut reader = BufReader::new(fd);
+        self.dbgdb.parse(&mut reader)?;
+        Ok(())
+    }
     pub fn get_symbols(&self, filter: Option<&String>) -> Result<Vec<(String, u16)>> {
         let mut v = Vec::new();
         for (name, addr) in &self.symbols {
@@ -172,6 +181,10 @@ impl Debugger {
             v.push((name.to_string(), *addr));
         }
         Ok(v)
+    }
+    pub fn get_dbg_symbols(&self, filter: Option<&String>) -> Result<Vec<(String, u16)>> {
+        let s = self.dbgdb.get_symbols(filter)?;
+        Ok(s)
     }
     pub fn load_code(&mut self, file: &Path) -> Result<(u16, u16)> {
         let (sp65_addr, run, _cpu, size) = loader::load_code(file)?;
@@ -272,8 +285,13 @@ impl Debugger {
         }
 
         // is it a symbol?
-        if let Some(sym) = self.symbols.get(addr_str) {
-            return Ok((*sym, addr_str.to_string()));
+        // if let Some(sym) = self.symbols.get(addr_str) {
+        //     return Ok((*sym, addr_str.to_string()));
+        // } else {
+        //     bail!("Symbol {} not found", addr_str);
+        // }
+        if let Some(sym) = self.dbgdb.get_symbol(addr_str)? {
+            return Ok((sym, addr_str.to_string()));
         } else {
             bail!("Symbol {} not found", addr_str);
         }
@@ -282,21 +300,24 @@ impl Debugger {
     // reverse of convert_addr.
     // tried to find a symbol matching an address
     // if not found it returns a numberic string
-    pub fn symbol_lookup(&self, addr: u16) -> String {
-        for (name, sym_addr) in &self.symbols {
-            if *sym_addr == addr {
-                return name.to_string();
-            }
+    pub fn symbol_lookup(&self, addr: u16) -> Result<String> {
+        // for (name, sym_addr) in &self.symbols {
+        //     if *sym_addr == addr {
+        //         return name.to_string();
+        //     }
+        // }
+
+        if let Some(sym) = self.dbgdb.find_symbol(addr)? {
+            return Ok(sym);
         }
-        format!("${:04x}", addr)
+        Ok(format!("${:04x}", addr))
     }
-    pub fn zp_symbol_lookup(&self, addr: u8) -> String {
-        for (name, sym_addr) in &self.symbols {
-            if *sym_addr == addr as u16 {
-                return name.to_string();
-            }
+    pub fn zp_symbol_lookup(&self, addr: u8) -> Result<String> {
+        if let Some(sym) = self.dbgdb.find_symbol(addr as u16)? {
+            return Ok(sym);
         }
-        format!("${:02x}", addr)
+
+        Ok(format!("${:02x}", addr))
     }
     pub fn read_pc(&self) -> u16 {
         Cpu::read_pc()

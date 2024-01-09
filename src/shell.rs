@@ -146,11 +146,11 @@ impl Shell {
             }
             Some(("symbols", args)) => {
                 let file = args.get_one::<String>("file").unwrap();
-                self.debugger.load_ll(Path::new(file))?;
+                self.debugger.load_dbg(Path::new(file))?;
             }
             Some(("list_symbols", args)) => {
                 let mtch = args.get_one::<String>("match");
-                let symbols = self.debugger.get_symbols(mtch)?;
+                let symbols = self.debugger.get_dbg_symbols(mtch)?;
                 for (sym, addr) in symbols {
                     println!("0x{:04x} {}", addr, sym);
                 }
@@ -218,7 +218,11 @@ impl Shell {
                     let frame = &stack[i];
                     match frame.frame_type {
                         Jsr((addr, ret, _sp, _)) => {
-                            println!("jsr {:<10} x{:04x}", self.debugger.symbol_lookup(addr), ret);
+                            println!(
+                                "jsr {:<10} x{:04x}",
+                                self.debugger.symbol_lookup(addr)?,
+                                ret
+                            );
                         }
                         Pha(ac) => println!("pha x{:02x}", ac),
                         Php(sr) => println!("php x{:02x}", sr),
@@ -246,8 +250,8 @@ impl Shell {
                         break;
                     }
                     let delta = self.debugger.dis(&chunk, addr);
-                    let addr_str = self.debugger.symbol_lookup(addr);
-                    if addr_str.starts_with('.') {
+                    let addr_str = self.debugger.symbol_lookup(addr)?;
+                    if addr_str.chars().next().unwrap() != '$' {
                         println!("{}:", addr_str);
                     }
                     println!("{:04x}:       {}", addr, self.debugger.dis_line);
