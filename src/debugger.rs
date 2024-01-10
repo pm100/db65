@@ -182,7 +182,7 @@ impl Debugger {
         }
         Ok(v)
     }
-    pub fn get_dbg_symbols(&self, filter: Option<&String>) -> Result<Vec<(String, u16)>> {
+    pub fn get_dbg_symbols(&self, filter: Option<&String>) -> Result<Vec<(String, u16, String)>> {
         let s = self.dbgdb.get_symbols(filter)?;
         Ok(s)
     }
@@ -290,10 +290,11 @@ impl Debugger {
         // } else {
         //     bail!("Symbol {} not found", addr_str);
         // }
-        if let Some(sym) = self.dbgdb.get_symbol(addr_str)? {
-            return Ok((sym, addr_str.to_string()));
-        } else {
-            bail!("Symbol {} not found", addr_str);
+        let syms = self.dbgdb.get_symbol(addr_str)?;
+        match syms.len() {
+            0 => bail!("Symbol {} not found", addr_str),
+            1 => Ok((syms[0].1, addr_str.to_string())),
+            _ => bail!("Symbol {} is ambiguous", addr_str),
         }
     }
 

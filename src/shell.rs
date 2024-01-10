@@ -151,8 +151,8 @@ impl Shell {
             Some(("list_symbols", args)) => {
                 let mtch = args.get_one::<String>("match");
                 let symbols = self.debugger.get_dbg_symbols(mtch)?;
-                for (sym, addr) in symbols {
-                    println!("0x{:04x} {}", addr, sym);
+                for (sym, addr, module) in symbols {
+                    println!("0x{:04x} [{}.]{}", addr, module, sym);
                 }
             }
             Some(("load_code", args)) => {

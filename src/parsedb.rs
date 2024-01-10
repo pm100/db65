@@ -25,15 +25,15 @@ pub struct FileRecord {
     pub name: String,
     pub size: i64,
     pub mod_time: i64,
-    pub module: Vec<i64>,
+    //  pub module: Vec<i64>,
 }
 #[derive(Debug)]
 pub struct LineRecord {
     pub id: i64,
     pub file: i64,
     pub line: i64,
-    pub type_: i64,
-    pub count: i64,
+    pub type_: Option<i64>,
+    pub count: Option<i64>,
     pub span: Vec<i64>,
 }
 #[derive(Debug)]
@@ -41,7 +41,7 @@ pub struct ModuleRecord {
     pub id: i64,
     pub name: String,
     pub file: i64,
-    pub lib: i64,
+    pub lib: Option<i64>,
 }
 #[derive(Debug)]
 pub struct SegmentRecord {
@@ -143,6 +143,7 @@ impl DebugData {
              name text,
             size integer ,
              mod_time integer
+            
              
          )",
             [],
@@ -180,7 +181,10 @@ impl DebugData {
     start integer ,
             
         size integer,
-        type integer
+        type integer,
+        cline integer,
+        aline integer,
+        scope integer
      
     )",
             [],
@@ -212,22 +216,52 @@ impl DebugData {
     )",
             [],
         )?;
+
+        self.conn.execute(
+            "create view symbol as 
+            select symdef.name as name,symdef.val as val,symdef.type as type, file.name as file, module.name as module
+            from symdef, file, module,line
+            where symdef.def = line.id and line.file = file.id and file.id = module.file 
+    ",
+            [],
+        )?;
+
+        self.conn.execute(
+            "create view clines as 
+            select line.file as file, line.line_no as line ,span.seg as seg ,span.start as addr 
+            from  line,span
+             where line.type=1  and line.id = span.cline  order by line_no
+    ",
+            [],
+        )?;
         Ok(())
     }
+
     pub fn parse(&mut self, reader: &mut BufReader<File>) -> Result<()> {
         let tx = self.conn.transaction()?;
         let mut rdr = csv::ReaderBuilder::new()
             .has_headers(false)
             .flexible(true)
             .from_reader(reader);
+        let mut symcount = 0;
+        let mut fcount = 0;
+        let mut lcount = 0;
+        let mut scount = 0;
+        let mut mcount = 0;
+        let mut segcount = 0;
+        let mut spcount = 0;
+        let mut ccount = 0;
+
         for result in rdr.records() {
             let record = result?;
             //println!("{:?}", record);
+
             let hdr = record.get(0).ok_or(anyhow!("bad file"))?;
             match Self::parse_eq(hdr)?.0.as_str() {
                 "version\tmajor" => println!("version"),
                 "info\tcsym" => println!("information"),
                 "csym\tid" => {
+                    ccount += 1;
                     let csym = Self::parse_csym(&record)?;
                     tx.execute(
                         "INSERT INTO csymbol 
@@ -245,6 +279,7 @@ impl DebugData {
                 }
                 "file\tid" => {
                     let file = Self::parse_file(&record)?;
+                    fcount += 1;
                     tx.execute(
                         "INSERT INTO file 
                              values (?1,?2,?3,?4)",
@@ -254,7 +289,7 @@ impl DebugData {
                 "lib\tid" => println!("lib"),
                 "line\tid" => {
                     let line = Self::parse_line(&record)?;
-
+                    lcount += 1;
                     tx.execute(
                         "INSERT INTO line (                id ,
                             file,
@@ -264,9 +299,29 @@ impl DebugData {
                              values (?1,?2,?3,?4,?5)",
                         params![line.id, line.file, line.line, line.type_, line.count],
                     )?;
+                    for span in line.span {
+                        if let Some(t) = line.type_ {
+                            if t == 1 {
+                                tx.execute(
+                                    "
+                              insert into span (id, cline) values(?1, ?2)
+                              on conflict(id) do update set cline = ?2",
+                                    params![span, line.id],
+                                )?;
+                            }
+                        } else {
+                            tx.execute(
+                                "
+                              insert into span (id, aline) values(?1, ?2)
+                              on conflict(id) do update set aline = ?2",
+                                params![span, line.id],
+                            )?;
+                        }
+                    }
                 }
                 "mod\tid" => {
                     let module = Self::parse_mod(&record)?;
+                    mcount += 1;
                     tx.execute(
                         "INSERT INTO module (                id ,
                             name,
@@ -278,6 +333,7 @@ impl DebugData {
                 }
                 "seg\tid" => {
                     let seg = Self::parse_seg(&record)?;
+                    segcount += 1;
                     tx.execute(
                         "INSERT INTO segment (                id ,
                             name,
@@ -302,18 +358,22 @@ impl DebugData {
                 }
                 "span\tid" => {
                     let span = Self::parse_span(&record)?;
+                    spcount += 1;
                     tx.execute(
                         "INSERT INTO span (                id ,
                             seg,
                            start  ,
                             size ,
                             type ) 
-                             values (?1,?2,?3,?4,?5)",
+                             values (?1,?2,?3,?4,?5)
+                             on conflict(id) do update set seg = ?2, start = ?3, size = ?4, type = ?5
+                             ",
                         params![span.id, span.seg, span.start, span.size, span.type_],
                     )?;
                 }
                 "scope\tid" => {
                     let scope = Self::parse_scope(record)?;
+                    scount += 1;
                     tx.execute(
                         "INSERT INTO scope (                id ,
                             name,
@@ -342,6 +402,7 @@ impl DebugData {
                 }
                 "sym\tid" => {
                     let sym = Self::parse_sym(record)?;
+                    symcount += 1;
                     if sym.type_ == "imp" {
                         tx.execute(
                             "INSERT INTO symref (id, name,
@@ -385,14 +446,14 @@ impl DebugData {
                 _ => {} //println!("other"),
             };
         }
-        // println!("csyms: {}", self.csyms.len());
-        // println!("files: {}", self.files.len());
-        // println!("lines: {}", self.lines.len());
-        // println!("modules: {}", self.modules.len());
-        // println!("segments: {}", self.segments.len());
-        // println!("spans: {}", self.spans.len());
-        // println!("scopes: {}", self.scopes.len());
-        // println!("symbols: {}", self.symbols.len());
+        println!("csyms: {}", ccount);
+        println!("files: {}", fcount);
+        println!("lines: {}", lcount);
+        println!("modules: {}", mcount);
+        println!("segments: {}", segcount);
+        println!("spans: {}", spcount);
+        println!("scopes: {}", scount);
+        println!("symbols: {}", symcount);
         // for sym in &self.symbols {
         //     let syms = self.symlk.entry(sym.name.clone()).or_insert(Vec::new());
         //     syms.push(sym.id as usize);
@@ -510,7 +571,6 @@ impl DebugData {
             name: String::new(),
             size: 0,
             mod_time: 0,
-            module: Vec::new(),
         };
 
         for next_pr in record.iter() {
@@ -520,7 +580,7 @@ impl DebugData {
                 "name" => rec.name = Self::get_string(&next.1)?.to_string(),
                 "size" => rec.size = Self::get_number(&next.1)?,
                 "mtime" => rec.mod_time = Self::get_hex_num(&next.1)?,
-                "mod" => rec.module = Self::get_num_array(&next.1)?,
+                "mod" => {}
                 _ => bail!("unexpected field: {}", next.0),
             }
         }
@@ -543,8 +603,8 @@ impl DebugData {
             id: 0,
             file: 0,
             line: 0,
-            type_: 0,
-            count: 0,
+            type_: None,
+            count: None,
             span: Vec::new(),
         };
         for next_pr in record.iter() {
@@ -553,9 +613,9 @@ impl DebugData {
                 "line\tid" => rec.id = Self::get_number(&next.1)?,
                 "file" => rec.file = Self::get_number(&next.1)?,
                 "line" => rec.line = Self::get_number(&next.1)?,
-                "count" => rec.count = Self::get_number(&next.1)?,
+                "count" => rec.count = Some(Self::get_number(&next.1)?),
                 "span" => rec.span = Self::get_num_array(&next.1)?,
-                "type" => rec.type_ = Self::get_number(&next.1)?,
+                "type" => rec.type_ = Some(Self::get_number(&next.1)?),
                 _ => bail!("unexpected field: {}", next.0),
             }
         }
@@ -578,15 +638,20 @@ impl DebugData {
             id: 0,
             name: String::new(),
             file: 0,
-            lib: 0,
+            lib: None,
         };
         for next_pr in record.iter() {
             let next = Self::parse_eq(next_pr)?;
             match next.0.as_str() {
                 "mod\tid" => rec.id = Self::get_number(&next.1)?,
-                "name" => rec.name = Self::get_string(&next.1)?.to_string(),
+                "name" => {
+                    rec.name = {
+                        let module = Self::get_string(&next.1)?.to_string();
+                        module.strip_suffix(".o").unwrap_or(&module).to_string()
+                    }
+                }
                 "file" => rec.file = Self::get_number(&next.1)?,
-                "lib" => rec.lib = Self::get_number(&next.1)?,
+                "lib" => rec.lib = Some(Self::get_number(&next.1)?),
                 _ => bail!("unexpected field: {}", next.0),
             }
         }
