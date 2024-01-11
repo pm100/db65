@@ -168,6 +168,12 @@ impl Debugger {
         let fd = File::open(file)?;
         let mut reader = BufReader::new(fd);
         self.dbgdb.parse(&mut reader)?;
+        self.dbgdb
+            .load_expr_symbols(&mut self.expr_context.symbols)?;
+        Ok(())
+    }
+    pub fn load_source(&mut self, file: &Path) -> Result<()> {
+        self.dbgdb.load_source_file(&file)?;
         Ok(())
     }
     pub fn get_symbols(&self, filter: Option<&String>) -> Result<Vec<(String, u16)>> {
@@ -292,9 +298,9 @@ impl Debugger {
         // }
         let syms = self.dbgdb.get_symbol(addr_str)?;
         match syms.len() {
-            0 => bail!("Symbol {} not found", addr_str),
+            0 => bail!("Symbol '{}' not found", addr_str),
             1 => Ok((syms[0].1, addr_str.to_string())),
-            _ => bail!("Symbol {} is ambiguous", addr_str),
+            _ => bail!("Symbol '{}' is ambiguous", addr_str),
         }
     }
 

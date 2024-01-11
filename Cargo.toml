@@ -24,3 +24,7 @@ cc = "1.0.83"
 [profile.release]
 strip = true 
 lto = true
+
+[dependencies.rusqlite]
+version = "0.30.0"
+features = ["bundled"]

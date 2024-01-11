@@ -67,6 +67,14 @@ pub fn syntax() -> Command {
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
+            Command::new("load_source")
+                .alias("xx")
+                .about("Load binary file")
+                .arg(Arg::new("file").required(true))
+                .arg_required_else_help(true)
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
             Command::new("run")
                 .about("Run code")
                 .arg(Arg::new("address"))

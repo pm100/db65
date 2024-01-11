@@ -1,10 +1,12 @@
 use anyhow::{anyhow, bail, Result};
+use evalexpr::Value;
 //pub const NO_PARAMS:  = [];
 use rusqlite::{params, Connection, Result as SqlResult};
 use std::{
     collections::HashMap,
     fs::{self, File},
-    io::BufReader,
+    io::{BufRead, BufReader},
+    path::Path,
 };
 
 pub struct DebugData {
@@ -32,7 +34,7 @@ impl DebugData {
             let name = row.get::<usize, String>(0)?;
             let val = row.get::<usize, i64>(1)? as u16;
             let mut module = row.get::<usize, String>(2)?;
-            module = module.strip_suffix(".o").unwrap_or(&module).to_string();
+
             Ok((name, val, module))
         })?;
         for row in rows {
@@ -46,6 +48,25 @@ impl DebugData {
         }
         Ok(v)
     }
+    pub fn load_expr_symbols(&mut self, sym_tab: &mut HashMap<String, Value>) -> Result<()> {
+        let mut stmt = self
+            .conn
+            .prepare_cached("select name, val , module from symbol")?;
+        let rows = stmt.query_map([], |row| {
+            let name = row.get::<usize, String>(0)?;
+            let val = row.get::<usize, i64>(1)? as u16;
+            let mut module = row.get::<usize, String>(2)?;
+
+            Ok((name, val, module))
+        })?;
+        sym_tab.clear();
+        for row in rows {
+            let (name, val, module) = row?;
+            sym_tab.insert(name, Value::Int(val as i64));
+        }
+        Ok(())
+    }
+
     pub fn get_symbol(&self, name: &str) -> Result<Vec<(String, u16, String)>> {
         let mut v = Vec::new();
 
@@ -99,5 +120,38 @@ impl DebugData {
             return Ok(Some(val));
         }
         Ok(None)
+    }
+
+    pub fn load_source_file(&mut self, file: &Path) -> Result<()> {
+        let fd = File::open(file)?;
+        let mut reader = BufReader::new(fd);
+        let mut line = String::new();
+        let mut lineno = 0;
+        let file_name = file.file_name().ok_or(anyhow!("bad file name"))?.to_str();
+        let mut find_file = self
+            .conn
+            .prepare_cached("select id from file where name = ?1")?;
+        let row = find_file.query_row(params![file_name], |row| row.get::<usize, i64>(0))?;
+
+        self.conn.execute(
+            "insert into source (file_id,name) values(?1, ?2)",
+            params![row, file_name],
+        )?;
+        // let fileno = self.conn.last_insert_rowid();
+        let mut stmt = self
+            .conn
+            .prepare_cached("insert into source_line (file, line_no, line) values(?1, ?2, ?3)")?;
+
+        loop {
+            line.clear();
+            let len = reader.read_line(&mut line)?;
+            if len == 0 {
+                break;
+            }
+            lineno += 1;
+            stmt.execute(params![row, lineno, line.trim()])?;
+        }
+        // select * from source_line left join cline on source_line.line_no = cline.line and source_line.file = cline.file;
+        Ok(())
     }
 }

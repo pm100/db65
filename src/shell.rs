@@ -79,9 +79,9 @@ impl Shell {
                         lastinput = line.clone();
                     };
                     match self.dispatch(&line) {
-                        Err(e) => println!("{}", e), // display error
-                        Ok(true) => break,           // quit was typed
-                        Ok(false) => {}              // continue
+                        Err(e) => println!("{} {}", e, e.backtrace()), // display error
+                        Ok(true) => break,                             // quit was typed
+                        Ok(false) => {}                                // continue
                     }
                 }
                 Err(ReadlineError::Interrupted) => {
@@ -158,6 +158,10 @@ impl Shell {
             Some(("load_code", args)) => {
                 let file = args.get_one::<String>("file").unwrap();
                 self.debugger.load_code(Path::new(file))?;
+            }
+            Some(("load_source", args)) => {
+                let file = args.get_one::<String>("file").unwrap();
+                self.debugger.load_source(Path::new(file))?;
             }
 
             Some(("quit", _)) => {
