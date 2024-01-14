@@ -177,7 +177,7 @@ impl ParaVirt {
             }
             2 => {
                 if let Ok(count) = stderr().write(&buf) {
-                    let _ = stderr().flush().unwrap();
+                    stderr().flush().unwrap();
                     count
                 } else {
                     0

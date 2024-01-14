@@ -182,6 +182,25 @@ pub fn syntax() -> Command {
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
+            Command::new("dbginfo")
+                .about("display various debug data")
+                .arg(arg!(-s --segments  "display segments"))
+                .arg(arg!([arg] "arg"))
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("next_statement")
+                .alias("ns")
+                .about("next statement")
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("list_source")
+                .alias("lc")
+                .about("list source")
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
             Command::new("expr")
                 .arg(arg!(<expression>  "expression to evaluate"))
                 .about("Evaluate address expression")

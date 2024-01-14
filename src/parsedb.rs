@@ -3,15 +3,14 @@ use anyhow::{anyhow, bail, Result};
 
 type StringRecord = Vec<String>;
 //pub const NO_PARAMS:  = [];
-use rusqlite::{params, Connection, Result as SqlResult};
+use rusqlite::params;
 use std::{
-    collections::HashMap,
-    fs::{self, File},
+    fs::File,
     io::{BufRead, BufReader},
     time::SystemTime,
 };
 
-use crate::debugdb::DebugData;
+use crate::{debugdb::DebugData, debugger::SegmentType};
 
 #[derive(Debug)]
 pub struct CsymRecord {
@@ -235,7 +234,10 @@ name text not null
 file integer,
 line text not null,
 line_no integer,
-addr integer
+seg integer,
+addr integer,
+absaddr integer
+
     )",
             [],
         )?;
@@ -293,7 +295,7 @@ addr integer
                     ccount += 1;
                     let csym = Self::parse_csym(&record)?;
                     tx.execute(
-                        "INSERT INTO csymbol 
+                        "insert into csymbol 
                              values (?1,?2,?3,?4,?5, ?6 ,?7)",
                         params![
                             csym.id,
@@ -310,7 +312,7 @@ addr integer
                     let file = Self::parse_file(&record)?;
                     fcount += 1;
                     tx.execute(
-                        "INSERT INTO file 
+                        "insert into file 
                              values (?1,?2,?3,?4)",
                         params![file.id, file.name, file.size, file.mod_time],
                     )?;
@@ -320,12 +322,9 @@ addr integer
                     let line = Self::parse_line(&record)?;
                     lcount += 1;
                     tx.execute(
-                        "INSERT INTO line (                id ,
-                            file,
-                           line_no  ,
-                            type, 
-                            count ) 
-                             values (?1,?2,?3,?4,?5)",
+                        "insert into line
+                            (id, file, line_no, type, count) 
+                            values (?1,?2,?3,?4,?5)",
                         params![line.id, line.file, line.line, line.type_, line.count],
                     )?;
                     for span in line.span {
@@ -352,34 +351,39 @@ addr integer
                     let module = Self::parse_mod(&record)?;
                     mcount += 1;
                     tx.execute(
-                        "INSERT INTO module (                id ,
-                            name,
-                           file  ,
-                            lib ) 
-                             values (?1,?2,?3,?4)",
+                        "insert into  module
+                            (id, name, file, lib) 
+                            values (?1,?2,?3,?4)",
                         params![module.id, module.name, module.file, module.lib],
                     )?;
                 }
                 "seg\tid" => {
                     let seg = Self::parse_seg(&record)?;
+                    let seg_type = match seg.type_.as_str() {
+                        // ro          means readonly
+                        "ro" => SegmentType::ReadOnly,
+                        // rw          means read/write
+                        "rw" => SegmentType::ReadWrite,
+                        // bss         means that this is an uninitialized segment
+                        "bss" => SegmentType::Bss,
+                        // zp          a zeropage segment
+                        "zp" => SegmentType::Zp,
+                        // overwrite   a segment that overwrites (parts of) another one
+                        "overwrite" => SegmentType::OverWrite,
+                        _ => bail!("bad segment type: {}", seg.type_),
+                    };
                     segcount += 1;
                     tx.execute(
-                        "INSERT INTO segment (                id ,
-                            name,
-                           start  ,
-                            size ,
-                            addrsize,
-                            type,
-                            oname,
-                            ooffs ) 
-                             values (?1,?2,?3,?4,?5,?6,?7,?8)",
+                        "insert into segment 
+                            (id, name, start, size , addrsize, type, oname, ooffs) 
+                            values (?1,?2,?3,?4,?5,?6,?7,?8)",
                         params![
                             seg.id,
                             seg.name,
                             seg.start,
                             seg.size,
                             seg.addrsize,
-                            seg.type_,
+                            seg_type as u8,
                             seg.oname,
                             seg.ooffs
                         ],
@@ -389,14 +393,11 @@ addr integer
                     let span = Self::parse_span(&record)?;
                     spcount += 1;
                     tx.execute(
-                        "INSERT INTO span (                id ,
-                            seg,
-                           start  ,
-                            size ,
-                            type ) 
-                             values (?1,?2,?3,?4,?5)
-                             on conflict(id) do update set seg = ?2, start = ?3, size = ?4, type = ?5
-                             ",
+                        "insert into span
+                            (id, seg, start, size,  type) 
+                            values (?1,?2,?3,?4,?5)
+                        on conflict(id) do
+                            update set seg = ?2, start = ?3, size = ?4, type = ?5",
                         params![span.id, span.seg, span.start, span.size, span.type_],
                     )?;
                 }
@@ -404,15 +405,9 @@ addr integer
                     let scope = Self::parse_scope(record)?;
                     scount += 1;
                     tx.execute(
-                        "INSERT INTO scope (                id ,
-                            name,
-                           module  ,
-                            type ,
-                            size,
-                            parent,
-                            sym,
-                            span ) 
-                             values (?1,?2,?3,?4,?5,?6,?7,?8)",
+                        "insert into scope 
+                            (id, name, module, type, size, parent, sym, span) 
+                            values (?1,?2,?3,?4,?5,?6,?7,?8)",
                         params![
                             scope.id,
                             scope.name,
@@ -421,7 +416,7 @@ addr integer
                             scope.size,
                             scope.parent,
                             scope.sym,
-                            if scope.span.len() > 0 {
+                            if !scope.span.is_empty() {
                                 scope.span[0]
                             } else {
                                 -1
@@ -434,9 +429,9 @@ addr integer
                     symcount += 1;
                     if sym.type_ == "imp" {
                         tx.execute(
-                            "INSERT INTO symref (id, name,
-                             scope , def ,type, exp,  val ,  seg , size , parent, addrsize ) 
-                             values (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10, ?11)",
+                            "insert into symref
+                                 (id, name, scope, def, type, exp, val , seg, size,  parent, addrsize) 
+                                values (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10, ?11)",
                             params![
                                 sym.id,
                                 sym.name,
@@ -453,9 +448,9 @@ addr integer
                         )?;
                     } else {
                         tx.execute(
-                            "INSERT INTO symdef (id, name,
-                             scope , def ,type, exp,  val ,  seg , size , parent, addrsize ) 
-                             values (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10, ?11)",
+                            "insert into symdef 
+                                (id, name, scope, def, type, exp, val, seg, size, parent, addrsize) 
+                                values (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10, ?11)",
                             params![
                                 sym.id,
                                 sym.name,
@@ -487,6 +482,7 @@ addr integer
         let duration = end.duration_since(start).unwrap();
         println!("it took {} milli seconds", duration.as_millis());
         tx.commit()?;
+
         Ok(())
     }
 

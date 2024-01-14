@@ -6,19 +6,23 @@ the same functionality as the cli shell.
 */
 
 use anyhow::{anyhow, bail, Result};
-use core::num;
-use evalexpr::Value;
+
 use std::{
-    collections::HashMap,
+    collections::{BTreeMap, HashMap},
     fmt::Debug,
     fs::File,
-    io::{BufRead, BufReader},
+    io::BufReader,
     path::Path,
 };
 
-use crate::{cpu::Cpu, debugdb::DebugData, execute::StopReason, expr::DB65Context, loader};
+use crate::{
+    cpu::Cpu,
+    debugdb::{self, DebugData, SourceInfo},
+    execute::StopReason,
+    expr::DB65Context,
+    loader,
+};
 pub struct Debugger {
-    pub(crate) symbols: HashMap<String, u16>,
     pub break_points: HashMap<u16, BreakPoint>,
     pub(crate) watch_points: HashMap<u16, WatchPoint>,
     pub(crate) next_bp: Option<u16>,
@@ -32,6 +36,28 @@ pub struct Debugger {
     pub(crate) run_done: bool,
     pub(crate) expr_context: DB65Context,
     pub(crate) dbgdb: DebugData,
+    pub(crate) seg_list: Vec<Segment>,
+}
+pub struct SegChunk {
+    pub offset: u16,
+    pub module: i32,
+    pub module_name: String,
+}
+pub struct Segment {
+    pub id: u8,       // number in db
+    pub name: String, // name in db
+    pub start: u16,   // start address
+    pub end: u16,     // end address
+    pub seg_type: u8, // type in db
+    pub modules: Vec<SegChunk>,
+}
+pub enum SegmentType {
+    Code = 0,
+    ReadOnly = 1,
+    ReadWrite = 2,
+    Zp = 3,
+    Bss = 4,
+    OverWrite = 5,
 }
 #[derive(Debug)]
 pub(crate) enum FrameType {
@@ -67,7 +93,6 @@ impl Debugger {
     pub fn new() -> Self {
         Cpu::reset();
         Self {
-            symbols: HashMap::new(),
             break_points: HashMap::new(),
             watch_points: HashMap::new(),
             loader_start: 0,
@@ -81,6 +106,7 @@ impl Debugger {
             run_done: false,
             expr_context: DB65Context::new(),
             dbgdb: DebugData::new().unwrap(),
+            seg_list: Vec::new(),
         }
     }
     pub fn delete_breakpoint(&mut self, id_opt: Option<&String>) -> Result<()> {
@@ -134,35 +160,26 @@ impl Debugger {
         );
         Ok(())
     }
-    pub fn load_ll(&mut self, file: &Path) -> Result<()> {
-        let fd = File::open(file)?;
-        let mut reader = BufReader::new(fd);
-        loop {
-            let mut line = String::new();
-            match reader.read_line(&mut line)? {
-                0 => break,
-                _len => {
-                    //al 000000 .sp
-                    let mut spl = line.split(' ');
-                    let _al = spl.next();
-                    let addr_str = spl.next().ok_or(anyhow!("invalid symbol file"))?.trim_end();
-                    let name = spl.next().ok_or(anyhow!("invalid symbol file"))?.trim_end();
-                    let addr = u16::from_str_radix(addr_str, 16)?;
-                    if let Some(nm) = name.strip_prefix('.') {
-                        self.symbols.insert(nm.to_string(), addr);
-                    } else {
-                        self.symbols.insert(name.to_string(), addr);
-                    }
+
+    pub fn next_statement(&mut self) -> Result<StopReason> {
+        let mut pc = Cpu::read_pc();
+        if let Some(si) = self.dbgdb.find_source_line(pc)? {
+            let mut hash = BTreeMap::new();
+            self.dbgdb.get_source_file_lines(si.file_id, &mut hash)?;
+
+            for (_, si_line) in hash {
+                println!("si_line={:?}", si_line);
+                if si_line.absaddr > pc {
+                    pc = si_line.absaddr;
+                    self.next_bp = Some(pc);
+                    return self.execute(0);
                 }
             }
         }
-        self.expr_context.symbols.clear();
-        for (k, v) in &self.symbols {
-            self.expr_context
-                .symbols
-                .insert(k.clone(), Value::Int(*v as i64));
-        }
-        Ok(())
+        bail!("no next statement");
+    }
+    pub fn find_source_line(&self, addr: u16) -> Result<Option<SourceInfo>> {
+        self.dbgdb.find_source_line(addr)
     }
     pub fn load_dbg(&mut self, file: &Path) -> Result<()> {
         let fd = File::open(file)?;
@@ -170,23 +187,29 @@ impl Debugger {
         self.dbgdb.parse(&mut reader)?;
         self.dbgdb
             .load_expr_symbols(&mut self.expr_context.symbols)?;
+        self.dbgdb.load_seg_list(&mut self.seg_list)?;
+        self.dbgdb.load_all_cfiles()?;
         Ok(())
     }
     pub fn load_source(&mut self, file: &Path) -> Result<()> {
-        self.dbgdb.load_source_file(&file)?;
+        self.dbgdb.load_source_file(file)?;
         Ok(())
     }
-    pub fn get_symbols(&self, filter: Option<&String>) -> Result<Vec<(String, u16)>> {
-        let mut v = Vec::new();
-        for (name, addr) in &self.symbols {
-            if let Some(f) = &filter {
-                if !name.contains(*f) {
-                    continue;
-                }
-            }
-            v.push((name.to_string(), *addr));
-        }
-        Ok(v)
+    // pub fn get_symbols(&self, filter: Option<&String>) -> Result<Vec<(String, u16)>> {
+    //     let mut v = Vec::new();
+    //     for (name, addr) in &self.symbols {
+    //         if let Some(f) = &filter {
+    //             if !name.contains(*f) {
+    //                 continue;
+    //             }
+    //         }
+    //         v.push((name.to_string(), *addr));
+    //     }
+    //     Ok(v)
+    // }
+
+    pub fn get_segments(&self) -> &Vec<Segment> {
+        &self.seg_list
     }
     pub fn get_dbg_symbols(&self, filter: Option<&String>) -> Result<Vec<(String, u16, String)>> {
         let s = self.dbgdb.get_symbols(filter)?;
@@ -286,7 +309,7 @@ impl Debugger {
         }
 
         // a decimal number?
-        if addr_str.chars().next().unwrap().is_digit(10) {
+        if addr_str.chars().next().unwrap().is_ascii_digit() {
             return Ok((addr_str.parse::<u16>()?, String::new()));
         }
 
@@ -371,5 +394,31 @@ impl Debugger {
     }
     pub fn read_stack(&self) -> &Vec<StackFrame> {
         &self.stack_frames
+    }
+
+    pub fn find_module(&self, addr: u16) -> Option<&SegChunk> {
+        if self.seg_list.len() == 0 {
+            return None;
+        }
+        let mut current = 0;
+        for i in 1..self.seg_list.len() {
+            if self.seg_list[i].start > addr {
+                break;
+            }
+            current = i;
+        }
+        let seg = &self.seg_list[current];
+        if seg.modules.len() == 0 {
+            return None;
+        }
+        let addr = addr - seg.start;
+        let mut current_mod = 0;
+        for i in 1..seg.modules.len() {
+            if seg.modules[i].offset > addr {
+                break;
+            }
+            current_mod = i;
+        }
+        Some(&seg.modules[current_mod])
     }
 }

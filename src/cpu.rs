@@ -50,7 +50,17 @@ pub struct Cpu {
     memhitcount: u8,           // entry count in hit array for this instruction
     pub paracall: bool,        // we just did a pv call
 }
+bitflags! {
+    #[derive(Copy, Clone, Default)]
+   pub(crate) struct ShadowFlags:u8{
+        const WRITTEN =       0b0000_0001; // written at some point
+        const EXECUTE =        0b0000_0010; // executable
+        const WRITE =    0b0000_0100;   // writable
+        const TAINTED =     0b0000_1000; // contents derived from uniti data
+        const FREE =       0b0001_0000;  // free memory
 
+    }
+}
 // our callable functions into sim65
 extern "C" {
     pub fn ExecuteInsn() -> u32;

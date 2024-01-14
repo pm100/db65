@@ -255,7 +255,7 @@ impl Shell {
                     }
                     let delta = self.debugger.dis(&chunk, addr);
                     let addr_str = self.debugger.symbol_lookup(addr)?;
-                    if addr_str.chars().next().unwrap() != '$' {
+                    if !addr_str.starts_with('$') {
                         println!("{}:", addr_str);
                     }
                     println!("{:04x}:       {}", addr, self.debugger.dis_line);
@@ -279,6 +279,30 @@ impl Shell {
                 let expr = args.get_one::<String>("expression").unwrap();
                 let ans = self.expand_expr(expr)?;
                 println!("{:}", ans);
+            }
+
+            Some(("dbginfo", args)) => {
+                if *args.get_one::<bool>("segments").unwrap() {
+                    let segs = self.debugger.get_segments();
+                    if let Some(arg) = args.get_one::<String>("arg") {
+                        if let Some(seg) = segs.iter().find(|s| s.name.as_str() == arg) {
+                            for chunk in seg.modules.iter() {
+                                println!(
+                                    "{:15} 0x{:04x} = 0x{:04x}",
+                                    chunk.module_name,
+                                    chunk.offset,
+                                    seg.start + chunk.offset
+                                );
+                            }
+                        } else {
+                            bail!("unknown segment {}", arg);
+                        }
+                    } else {
+                        for seg in segs {
+                            println!("{:15} 0x{:04x}-0x{:04x}", seg.name, seg.start, seg.end);
+                        }
+                    }
+                }
             }
             Some(("finish", _)) => {
                 if !self.debugger.run_done {
@@ -313,6 +337,14 @@ impl Shell {
 
                 self.debugger.write_byte(addr, value as u8);
             }
+            Some(("next_statement", _)) => {
+                if !self.debugger.run_done {
+                    bail!("program not running");
+                };
+                let reason = self.debugger.next_statement()?;
+                self.stop(reason);
+            }
+            Some(("list_source", _)) => {}
             Some((name, _matches)) => unimplemented!("{name}"),
             None => unreachable!("subcommand required"),
         }
@@ -399,8 +431,14 @@ impl Shell {
             }
             StopReason::Finish => {}
         }
-        // disassemble the current instruction
         let inst_addr = self.debugger.read_pc();
+        //  let module = self.debugger.find_module(inst_addr);
+        if let Some(source_info) = self.debugger.find_source_line(inst_addr).unwrap() {
+            println!("{}", source_info.line);
+        }
+        //  println!("{}:", module.unwrap().module_name);
+        // disassemble the current instruction
+
         let mem = self.debugger.get_chunk(self.debugger.read_pc(), 3).unwrap();
         self.debugger.dis(&mem, inst_addr);
 
