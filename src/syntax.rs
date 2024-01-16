@@ -185,6 +185,7 @@ pub fn syntax() -> Command {
             Command::new("dbginfo")
                 .about("display various debug data")
                 .arg(arg!(-s --segments  "display segments"))
+                .arg(arg!(-a --address_map  "display c source address map"))
                 .arg(arg!([arg] "arg"))
                 .help_template(APPLET_TEMPLATE),
         )
@@ -192,6 +193,12 @@ pub fn syntax() -> Command {
             Command::new("next_statement")
                 .alias("ns")
                 .about("next statement")
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("step_statement")
+                .alias("ss")
+                .about("step statement")
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(

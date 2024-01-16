@@ -5,7 +5,7 @@ the same functionality as the cli shell.
 
 */
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -16,17 +16,27 @@ use std::{
 };
 
 use crate::{
-    cpu::Cpu,
-    debugdb::{self, DebugData, SourceInfo},
-    execute::StopReason,
+    cpu::{Cpu, ShadowFlags},
+    db::debugdb::{AddrSource, DebugData, SourceInfo},
+    execute::{BugType, StopReason},
     expr::DB65Context,
     loader,
 };
+
+pub enum SourceDebugMode {
+    None,
+    Next,
+    Step,
+}
 pub struct Debugger {
     pub break_points: HashMap<u16, BreakPoint>,
     pub(crate) watch_points: HashMap<u16, WatchPoint>,
+    pub(crate) source_info: BTreeMap<u16, AddrSource>,
+    pub(crate) current_file: Option<i64>,
     pub(crate) next_bp: Option<u16>,
+    pub(crate) call_intercepts: HashMap<u16, fn(&mut Debugger, bool) -> Result<Option<StopReason>>>,
     loader_start: u16,
+    pub(crate) source_mode: SourceDebugMode,
     pub(crate) dis_line: String,
     pub(crate) ticks: usize,
     pub(crate) stack_frames: Vec<StackFrame>,
@@ -37,6 +47,13 @@ pub struct Debugger {
     pub(crate) expr_context: DB65Context,
     pub(crate) dbgdb: DebugData,
     pub(crate) seg_list: Vec<Segment>,
+    pub(crate) heap_blocks: HashMap<u16, HeapBlock>,
+}
+
+pub struct HeapBlock {
+    pub addr: u16,
+    pub size: u16,
+    pub alloc_addr: u16,
 }
 pub struct SegChunk {
     pub offset: u16,
@@ -95,6 +112,8 @@ impl Debugger {
         Self {
             break_points: HashMap::new(),
             watch_points: HashMap::new(),
+            source_info: BTreeMap::new(),
+            current_file: None,
             loader_start: 0,
             dis_line: String::new(),
             ticks: 0,
@@ -107,6 +126,9 @@ impl Debugger {
             expr_context: DB65Context::new(),
             dbgdb: DebugData::new().unwrap(),
             seg_list: Vec::new(),
+            source_mode: SourceDebugMode::None,
+            call_intercepts: HashMap::new(),
+            heap_blocks: HashMap::new(),
         }
     }
     pub fn delete_breakpoint(&mut self, id_opt: Option<&String>) -> Result<()> {
@@ -161,25 +183,107 @@ impl Debugger {
         Ok(())
     }
 
-    pub fn next_statement(&mut self) -> Result<StopReason> {
-        let mut pc = Cpu::read_pc();
-        if let Some(si) = self.dbgdb.find_source_line(pc)? {
-            let mut hash = BTreeMap::new();
-            self.dbgdb.get_source_file_lines(si.file_id, &mut hash)?;
+    fn load_intercepts(&mut self) -> Result<()> {
+        let malloc = self.dbgdb.get_symbol("malloc._malloc")?;
+        if malloc.len() == 1 {
+            self.call_intercepts
+                .insert(malloc[0].1, |d, f| d.malloc_intercept(f));
+        };
+        let free = self.dbgdb.get_symbol("free._free")?;
+        if free.len() == 1 {
+            self.call_intercepts
+                .insert(free[0].1, |d, f| d.free_intercept(f));
+        };
+        Ok(())
+    }
+    fn ac_xr() -> u16 {
+        let ac = Cpu::read_ac();
+        let xr = Cpu::read_xr();
+        (xr as u16) << 8 | (ac as u16)
+    }
+    fn malloc_intercept(&mut self, ret: bool) -> Result<Option<StopReason>> {
+        if ret {
+            let addr = Self::ac_xr();
+            let new_block = if let Some(hb) = self.heap_blocks.get(&0) {
+                (hb.alloc_addr, hb.size)
+            } else {
+                bail!("missing heap block");
+            };
+            let hb = HeapBlock {
+                addr,
+                size: new_block.1,
+                alloc_addr: new_block.0,
+            };
 
-            for (_, si_line) in hash {
-                println!("si_line={:?}", si_line);
-                if si_line.absaddr > pc {
-                    pc = si_line.absaddr;
-                    self.next_bp = Some(pc);
-                    return self.execute(0);
-                }
+            self.heap_blocks.remove(&0);
+            self.heap_blocks.insert(addr, hb);
+        //       println!("malloc ret {:04x}", addr);
+        } else {
+            let size = Self::ac_xr();
+            let hb = HeapBlock {
+                addr: 0,
+                size,
+                alloc_addr: Cpu::read_pc(),
+            };
+            //            println!("malloc call {} @ {:04x}", size, hb.alloc_addr);
+            self.heap_blocks.insert(0, hb);
+        };
+
+        Ok(None)
+    }
+    fn free_intercept(&mut self, ret: bool) -> Result<Option<StopReason>> {
+        if !ret {
+            let addr = Self::ac_xr();
+            if let Some(hb) = self.heap_blocks.get(&addr) {
+                // println!("free block {:02x} {:02x}", hb.size, hb.addr);
+            } else {
+                return Ok(Some(StopReason::Bug(BugType::HeapCheck)));
             }
+            self.heap_blocks.remove(&addr);
         }
-        bail!("no next statement");
+
+        Ok(None)
+    }
+    pub fn next_statement(&mut self) -> Result<StopReason> {
+        self.source_mode = SourceDebugMode::Next;
+        self.execute(0)
+    }
+    pub fn step_statement(&mut self) -> Result<StopReason> {
+        self.source_mode = SourceDebugMode::Step;
+        self.execute(0)
     }
     pub fn find_source_line(&self, addr: u16) -> Result<Option<SourceInfo>> {
         self.dbgdb.find_source_line(addr)
+    }
+    pub fn get_addr_map(&self) -> &BTreeMap<u16, AddrSource> {
+        &self.source_info
+    }
+    fn init_shadow(&self) -> Result<()> {
+        let shadow = Cpu::get_shadow();
+        for seg in &self.seg_list {
+            if seg.name == "CODE" {
+                for i in seg.start..seg.end {
+                    shadow[i as usize] = ShadowFlags::EXECUTE;
+                }
+            } else {
+                const RW: u8 = SegmentType::ReadWrite as u8;
+                const RO: u8 = SegmentType::ReadOnly as u8;
+                match seg.seg_type {
+                    RW => {
+                        for i in seg.start..seg.end {
+                            shadow[i as usize] = ShadowFlags::READ | ShadowFlags::WRITE;
+                        }
+                    }
+                    RO => {
+                        for i in seg.start..seg.end {
+                            shadow[i as usize] = ShadowFlags::READ;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Ok(())
     }
     pub fn load_dbg(&mut self, file: &Path) -> Result<()> {
         let fd = File::open(file)?;
@@ -189,24 +293,16 @@ impl Debugger {
             .load_expr_symbols(&mut self.expr_context.symbols)?;
         self.dbgdb.load_seg_list(&mut self.seg_list)?;
         self.dbgdb.load_all_cfiles()?;
+        self.source_info.clear();
+        self.dbgdb.load_all_source_files(&mut self.source_info)?;
+        self.load_intercepts()?;
+        self.init_shadow()?;
         Ok(())
     }
     pub fn load_source(&mut self, file: &Path) -> Result<()> {
         self.dbgdb.load_source_file(file)?;
         Ok(())
     }
-    // pub fn get_symbols(&self, filter: Option<&String>) -> Result<Vec<(String, u16)>> {
-    //     let mut v = Vec::new();
-    //     for (name, addr) in &self.symbols {
-    //         if let Some(f) = &filter {
-    //             if !name.contains(*f) {
-    //                 continue;
-    //             }
-    //         }
-    //         v.push((name.to_string(), *addr));
-    //     }
-    //     Ok(v)
-    // }
 
     pub fn get_segments(&self) -> &Vec<Segment> {
         &self.seg_list
@@ -269,7 +365,9 @@ impl Debugger {
     pub fn step(&mut self) -> Result<StopReason> {
         self.execute(1)
     }
-
+    pub fn get_heap_blocks(&self) -> &HashMap<u16, HeapBlock> {
+        &self.heap_blocks
+    }
     pub fn run(&mut self, cmd_args: Vec<&String>) -> Result<StopReason> {
         Cpu::write_word(0xFFFC, self.loader_start);
         Cpu::reset();
@@ -397,7 +495,7 @@ impl Debugger {
     }
 
     pub fn find_module(&self, addr: u16) -> Option<&SegChunk> {
-        if self.seg_list.len() == 0 {
+        if self.seg_list.is_empty() {
             return None;
         }
         let mut current = 0;
@@ -408,7 +506,7 @@ impl Debugger {
             current = i;
         }
         let seg = &self.seg_list[current];
-        if seg.modules.len() == 0 {
+        if seg.modules.is_empty() {
             return None;
         }
         let addr = addr - seg.start;

@@ -302,6 +302,11 @@ impl Shell {
                             println!("{:15} 0x{:04x}-0x{:04x}", seg.name, seg.start, seg.end);
                         }
                     }
+                } else if *args.get_one::<bool>("address_map").unwrap() {
+                    let map = self.debugger.get_addr_map();
+                    for (addr, info) in map {
+                        println!("0x{:04x} {:?}", addr, info);
+                    }
                 }
             }
             Some(("finish", _)) => {
@@ -342,6 +347,13 @@ impl Shell {
                     bail!("program not running");
                 };
                 let reason = self.debugger.next_statement()?;
+                self.stop(reason);
+            }
+            Some(("step_statement", _)) => {
+                if !self.debugger.run_done {
+                    bail!("program not running");
+                };
+                let reason = self.debugger.step_statement()?;
                 self.stop(reason);
             }
             Some(("list_source", _)) => {}
@@ -414,6 +426,13 @@ impl Shell {
             }
             StopReason::Exit(_) => {
                 println!("exit");
+                let heap = self.debugger.get_heap_blocks();
+                for (addr, hb) in heap {
+                    println!(
+                        "heap block 0x{:04x} size {} allocated at {:04x}",
+                        addr, hb.size, hb.alloc_addr
+                    );
+                }
                 return;
             }
             StopReason::Count | StopReason::Next => {}
@@ -423,6 +442,9 @@ impl Shell {
                 }
                 BugType::Memcheck(addr) => {
                     println!("memory read uninit {:04x}", addr);
+                }
+                BugType::HeapCheck => {
+                    println!("heap check failed");
                 }
             },
             StopReason::WatchPoint(addr) => {

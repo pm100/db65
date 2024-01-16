@@ -10,7 +10,7 @@ use std::{
     time::SystemTime,
 };
 
-use crate::{debugdb::DebugData, debugger::SegmentType};
+use crate::{db::debugdb::DebugData, debugger::SegmentType};
 
 #[derive(Debug)]
 pub struct CsymRecord {

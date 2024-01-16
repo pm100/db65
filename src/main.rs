@@ -5,14 +5,18 @@ use anyhow::Result;
 use clap::Parser;
 use std::path::PathBuf;
 mod cpu;
-mod debugdb;
+mod db {
+
+    pub mod debugdb;
+    pub mod parsedb;
+}
+
 mod debugger;
 mod dis;
 mod execute;
 mod expr;
 mod loader;
 mod paravirt;
-mod parsedb;
 mod shell;
 mod syntax;
 

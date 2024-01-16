@@ -3,7 +3,7 @@ use evalexpr::Value;
 //pub const NO_PARAMS:  = [];
 use rusqlite::{
     params,
-    types::{FromSql, Null, Value as SqlValue, ValueRef as SqlValueRef},
+    types::{Null, Value as SqlValue},
     Connection, ToSql,
 };
 use std::{
@@ -11,7 +11,6 @@ use std::{
     fs::{self, File},
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
-    result,
 };
 
 use crate::debugger::{SegChunk, Segment};
@@ -19,6 +18,14 @@ use crate::debugger::{SegChunk, Segment};
 pub struct SourceInfo {
     pub file_id: i64,
     pub line: String,
+    pub line_no: i64,
+    pub seg: u8,
+    pub addr: u16,
+    pub absaddr: u16,
+}
+#[derive(Debug)]
+pub struct AddrSource {
+    pub file_id: i64,
     pub line_no: i64,
     pub seg: u8,
     pub addr: u16,
@@ -162,7 +169,7 @@ impl DebugData {
             if let SqlValue::Text(name) = &row[0] {
                 let path = Path::new(&name);
 
-                self.load_source_file(&path)?;
+                self.load_source_file(path)?;
             }
         }
         Ok(())
@@ -247,7 +254,16 @@ impl DebugData {
         tx.commit()?;
         Ok(())
     }
+    pub fn load_all_source_files(&mut self, map: &mut BTreeMap<u16, AddrSource>) -> Result<()> {
+        let rows = self.query_db(&[], "select distinct file from cline")?;
 
+        for row in rows {
+            if let SqlValue::Integer(id) = &row[0] {
+                self.get_source_file_lines2(*id, map)?;
+            }
+        }
+        Ok(())
+    }
     pub fn get_source_file_lines(
         &self,
         file: i64,
@@ -278,6 +294,36 @@ impl DebugData {
         Ok(())
     }
 
+    pub fn get_source_file_lines2(
+        &self,
+        file: i64,
+        hash: &mut BTreeMap<u16, AddrSource>,
+    ) -> Result<()> {
+        let mut stmt = self.conn.prepare_cached(
+            "select line,seg,addr, (cline.addr+ segment.start) as absaddr
+             from  cline, segment   where cline.file = ?1 and cline.seg = segment.id",
+        )?;
+        let rows = stmt.query_map(params![file], |row| {
+            let line_no = row.get::<usize, i64>(0)?;
+            let seg = row.get::<usize, i64>(1)?;
+            let addr = row.get::<usize, u16>(2)?;
+            let absaddr = row.get::<usize, u16>(3)?;
+            Ok(AddrSource {
+                line_no,
+                seg: seg as u8,
+                addr,
+                absaddr,
+
+                file_id: file,
+            })
+        })?;
+        for row in rows {
+            let info = row?;
+            hash.insert(info.absaddr, info);
+        }
+        Ok(())
+    }
+
     pub fn find_source_line(&self, addr: u16) -> Result<Option<SourceInfo>> {
         let sql =
             "select * from (select * from source_line order by absaddr desc) where absaddr <= ?1 limit 1";
@@ -297,7 +343,7 @@ impl DebugData {
             let addr = row.get::<usize, u16>(5)?;
             let absaddr = row.get::<usize, u16>(6)?;
             Ok(SourceInfo {
-                line: line,
+                line,
                 line_no,
                 file_id: file,
                 seg: seg as u8,
@@ -382,6 +428,8 @@ impl DebugData {
         }
         Ok(None)
     }
+
+    // general purpose query function
     fn query_db(&self, params: &[&dyn ToSql], query: &str) -> Result<Vec<Vec<SqlValue>>> {
         let mut stmt = self.conn.prepare_cached(query)?;
         let cols = stmt.column_count();
@@ -391,17 +439,13 @@ impl DebugData {
         }
         let mut rows = stmt.raw_query();
         let mut result = Vec::new();
-        loop {
-            if let Some(r) = rows.next()? {
-                let mut row_vec = Vec::new();
-                for i in 0..cols {
-                    let val = r.get::<usize, SqlValue>(i).unwrap();
-                    row_vec.push(val);
-                }
-                result.push(row_vec);
-            } else {
-                break;
+        while let Some(r) = rows.next()? {
+            let mut row_vec = Vec::new();
+            for i in 0..cols {
+                let val = r.get::<usize, SqlValue>(i).unwrap();
+                row_vec.push(val);
             }
+            result.push(row_vec);
         }
 
         Ok(result)
