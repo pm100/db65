@@ -13,7 +13,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::debugger::{SegChunk, Segment};
+use crate::debugger::debugger::{SegChunk, Segment};
 #[derive(Debug)]
 pub struct SourceInfo {
     pub file_id: i64,
@@ -57,7 +57,7 @@ impl DebugData {
         let rows = stmt.query_map([], |row| {
             let name = row.get::<usize, String>(0)?;
             let val = row.get::<usize, i64>(1)? as u16;
-            let module = row.get::<usize, String>(2)?;
+            let module = row.get::<usize, Option<String>>(2)?;
 
             Ok((name, val, module))
         })?;
@@ -68,6 +68,12 @@ impl DebugData {
                     continue;
                 }
             }
+            // linker defined symbols have no module names assocaited with them
+            let module = if let Some(m) = module {
+                m
+            } else {
+                String::new()
+            };
             v.push((name, val, module));
         }
         Ok(v)
@@ -79,7 +85,8 @@ impl DebugData {
         let rows = stmt.query_map([], |row| {
             let name = row.get::<usize, String>(0)?;
             let val = row.get::<usize, i64>(1)? as u16;
-            let module = row.get::<usize, String>(2)?;
+
+            let module = row.get::<usize, Option<String>>(2)?;
 
             Ok((name, val, module))
         })?;
@@ -366,15 +373,16 @@ impl DebugData {
                 let seg = row.get::<usize, i64>(0)?;
                 let name = row.get::<usize, String>(1)?;
                 let start = row.get::<usize, u16>(2)?;
-                let end = row.get::<usize, u16>(3)?;
+                let size = row.get::<usize, u16>(3)?;
+                let seg_type = row.get::<usize, u8>(5)?;
 
                 Ok(Segment {
                     id: seg as u8,
                     name,
                     start,
-                    end,
+                    size,
                     modules: Vec::new(),
-                    seg_type: 0,
+                    seg_type,
                 })
             })?
         {

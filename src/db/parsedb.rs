@@ -10,7 +10,7 @@ use std::{
     time::SystemTime,
 };
 
-use crate::{db::debugdb::DebugData, debugger::SegmentType};
+use crate::{db::debugdb::DebugData, debugger::debugger::SegmentType};
 
 #[derive(Debug)]
 pub struct CsymRecord {
@@ -245,8 +245,11 @@ absaddr integer
         self.conn.execute(
             "create view symbol as 
             select symdef.name as name,symdef.val as val,symdef.type as type, file.name as file, module.name as module
-            from symdef, file, module,line
-            where symdef.def = line.id and line.file = file.id and file.id = module.file 
+            from symdef
+            left join line on  symdef.def = line.id
+            left join file on line.file = file.id
+            left join module on file.id = module.file
+           
     ",
             [],
         )?;
@@ -359,19 +362,20 @@ absaddr integer
                 }
                 "seg\tid" => {
                     let seg = Self::parse_seg(&record)?;
-                    let seg_type = match seg.type_.as_str() {
+                    let mut seg_type = match seg.type_.as_str() {
                         // ro          means readonly
                         "ro" => SegmentType::ReadOnly,
                         // rw          means read/write
                         "rw" => SegmentType::ReadWrite,
-                        // bss         means that this is an uninitialized segment
-                        "bss" => SegmentType::Bss,
-                        // zp          a zeropage segment
-                        "zp" => SegmentType::Zp,
-                        // overwrite   a segment that overwrites (parts of) another one
-                        "overwrite" => SegmentType::OverWrite,
+
                         _ => bail!("bad segment type: {}", seg.type_),
                     };
+                    if seg.addrsize == "zeropage" {
+                        seg_type = SegmentType::Zp;
+                    }
+                    if seg.name == "CODE" {
+                        seg_type = SegmentType::Code;
+                    }
                     segcount += 1;
                     tx.execute(
                         "insert into segment 
@@ -455,7 +459,7 @@ absaddr integer
                                 sym.id,
                                 sym.name,
                                 sym.scope,
-                                sym.def[0],
+                                if sym.def.is_empty() { 0 } else { sym.def[0] },
                                 sym.type_,
                                 sym.exp,
                                 sym.val,

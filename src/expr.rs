@@ -24,7 +24,7 @@ mem =@(.ptr + (0x20*xr)) // more math
 
 */
 
-use crate::{cpu::Cpu, debugger::Debugger};
+use crate::{debugger::cpu::Cpu, debugger::debugger::Debugger};
 use anyhow::{anyhow, Result};
 use evalexpr::{eval_int_with_context, Context, EvalexprResult, Value};
 use std::{collections::HashMap, ops::RangeInclusive};

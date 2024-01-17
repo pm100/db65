@@ -25,10 +25,11 @@ pub enum BugType {
     SpMismatch,
     Memcheck(u16),
     HeapCheck,
+    SegCheck(u16),
 }
 use crate::{
-    cpu::Cpu,
-    debugger::{Debugger, FrameType, SourceDebugMode, StackFrame, WatchType},
+    debugger::cpu::{Cpu, MemCheck},
+    debugger::debugger::{Debugger, FrameType, SourceDebugMode, StackFrame, WatchType},
 };
 use anyhow::anyhow;
 impl Debugger {
@@ -162,9 +163,15 @@ impl Debugger {
             }
 
             // invalid memory read check
-            if self.enable_mem_check {
-                if let Some(addr) = Cpu::get_memcheck() {
-                    break StopReason::Bug(BugType::Memcheck(addr));
+            if self.enable_mem_check && !self.in_malloc {
+                match Cpu::get_memcheck() {
+                    MemCheck::None => {}
+                    MemCheck::ReadNoWrite(addr) => {
+                        break 'main_loop StopReason::Bug(BugType::Memcheck(*addr));
+                    }
+                    MemCheck::WriteNoPermission(addr) => {
+                        break 'main_loop StopReason::Bug(BugType::SegCheck(*addr));
+                    }
                 }
             }
 

@@ -16,11 +16,11 @@ use std::{
 };
 
 use crate::{
-    cpu::{Cpu, ShadowFlags},
     db::debugdb::{AddrSource, DebugData, SourceInfo},
-    execute::{BugType, StopReason},
+    debugger::cpu::{Cpu, ShadowFlags},
+    debugger::execute::{BugType, StopReason},
+    debugger::loader,
     expr::DB65Context,
-    loader,
 };
 
 pub enum SourceDebugMode {
@@ -48,6 +48,7 @@ pub struct Debugger {
     pub(crate) dbgdb: DebugData,
     pub(crate) seg_list: Vec<Segment>,
     pub(crate) heap_blocks: HashMap<u16, HeapBlock>,
+    pub(crate) in_malloc: bool,
 }
 
 pub struct HeapBlock {
@@ -64,7 +65,7 @@ pub struct Segment {
     pub id: u8,       // number in db
     pub name: String, // name in db
     pub start: u16,   // start address
-    pub end: u16,     // end address
+    pub size: u16,    // end address
     pub seg_type: u8, // type in db
     pub modules: Vec<SegChunk>,
 }
@@ -73,8 +74,8 @@ pub enum SegmentType {
     ReadOnly = 1,
     ReadWrite = 2,
     Zp = 3,
-    Bss = 4,
-    OverWrite = 5,
+    //  Bss = 4,
+    // OverWrite = 5,
 }
 #[derive(Debug)]
 pub(crate) enum FrameType {
@@ -129,6 +130,7 @@ impl Debugger {
             source_mode: SourceDebugMode::None,
             call_intercepts: HashMap::new(),
             heap_blocks: HashMap::new(),
+            in_malloc: false,
         }
     }
     pub fn delete_breakpoint(&mut self, id_opt: Option<&String>) -> Result<()> {
@@ -203,22 +205,36 @@ impl Debugger {
     }
     fn malloc_intercept(&mut self, ret: bool) -> Result<Option<StopReason>> {
         if ret {
+            // return from malloc, we know the address now
+            self.in_malloc = false;
             let addr = Self::ac_xr();
+            if addr == 0 {
+                // malloc returned null
+                return Ok(None);
+            }
             let new_block = if let Some(hb) = self.heap_blocks.get(&0) {
                 (hb.alloc_addr, hb.size)
             } else {
-                bail!("missing heap block");
+                bail!("missing 0 heap block");
             };
             let hb = HeapBlock {
                 addr,
                 size: new_block.1,
                 alloc_addr: new_block.0,
             };
-
+            // delete the temporary 0 block
             self.heap_blocks.remove(&0);
             self.heap_blocks.insert(addr, hb);
-        //       println!("malloc ret {:04x}", addr);
+
+            // now update the shadow memory
+            let shadow = Cpu::get_shadow();
+            for i in addr..addr + new_block.1 {
+                shadow[i as usize] |= ShadowFlags::READ | ShadowFlags::WRITE;
+            }
+            //       println!("malloc ret {:04x}", addr);
         } else {
+            // at the time of call to malloc we do not know the address
+            // so create a temporary entry with addr = 0
             let size = Self::ac_xr();
             let hb = HeapBlock {
                 addr: 0,
@@ -227,6 +243,7 @@ impl Debugger {
             };
             //            println!("malloc call {} @ {:04x}", size, hb.alloc_addr);
             self.heap_blocks.insert(0, hb);
+            self.in_malloc = true;
         };
 
         Ok(None)
@@ -234,12 +251,20 @@ impl Debugger {
     fn free_intercept(&mut self, ret: bool) -> Result<Option<StopReason>> {
         if !ret {
             let addr = Self::ac_xr();
-            if let Some(hb) = self.heap_blocks.get(&addr) {
-                // println!("free block {:02x} {:02x}", hb.size, hb.addr);
+            if addr == 0 {
+                // free of null
+                return Ok(None);
+            }
+            let old = if let Some(hb) = self.heap_blocks.get(&addr) {
+                (hb.size, hb.addr)
             } else {
                 return Ok(Some(StopReason::Bug(BugType::HeapCheck)));
-            }
+            };
             self.heap_blocks.remove(&addr);
+            let shadow = Cpu::get_shadow();
+            for i in addr..addr + old.0 {
+                shadow[i as usize] = ShadowFlags::empty();
+            }
         }
 
         Ok(None)
@@ -260,28 +285,52 @@ impl Debugger {
     }
     fn init_shadow(&self) -> Result<()> {
         let shadow = Cpu::get_shadow();
-        for seg in &self.seg_list {
-            if seg.name == "CODE" {
-                for i in seg.start..seg.end {
-                    shadow[i as usize] = ShadowFlags::EXECUTE;
+        for seg in self.seg_list.iter().filter(|s| s.name != "EXEHDR") {
+            const RW: u8 = SegmentType::ReadWrite as u8;
+            const RO: u8 = SegmentType::ReadOnly as u8;
+            const ZP: u8 = SegmentType::Zp as u8;
+            const CODE: u8 = SegmentType::Code as u8;
+            print!(
+                "{} {} {:04x}-{:04x} {}",
+                seg.id, seg.name, seg.start, seg.size, seg.seg_type
+            );
+            match seg.seg_type {
+                RW => {
+                    println!("rw");
+                    for i in seg.start..(seg.start + seg.size) {
+                        shadow[i as usize] |= ShadowFlags::READ | ShadowFlags::WRITE;
+                    }
                 }
-            } else {
-                const RW: u8 = SegmentType::ReadWrite as u8;
-                const RO: u8 = SegmentType::ReadOnly as u8;
-                match seg.seg_type {
-                    RW => {
-                        for i in seg.start..seg.end {
-                            shadow[i as usize] = ShadowFlags::READ | ShadowFlags::WRITE;
-                        }
+                RO => {
+                    println!("ro");
+                    for i in seg.start..(seg.start + seg.size) {
+                        shadow[i as usize] |= ShadowFlags::READ;
                     }
-                    RO => {
-                        for i in seg.start..seg.end {
-                            shadow[i as usize] = ShadowFlags::READ;
-                        }
+                }
+                ZP => {
+                    println!("zp");
+                    for i in seg.start..(seg.start + seg.size) {
+                        shadow[i as usize] |= ShadowFlags::READ | ShadowFlags::WRITE;
                     }
-                    _ => {}
+                }
+                CODE => {
+                    println!("code");
+                    for i in seg.start..(seg.start + seg.size) {
+                        shadow[i as usize] |= ShadowFlags::EXECUTE | ShadowFlags::READ;
+                    }
+                }
+                _ => {
+                    println!("unknown segment type {}", seg.seg_type);
                 }
             }
+        }
+        // hardware stack
+        for i in 0x100..0x200 {
+            shadow[i] = ShadowFlags::READ | ShadowFlags::WRITE;
+        }
+        // sp65 stack
+        for i in (0xfff0 - 0x800)..0xfff0 {
+            shadow[i] = ShadowFlags::READ | ShadowFlags::WRITE;
         }
         Ok(())
     }

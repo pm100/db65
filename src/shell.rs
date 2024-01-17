@@ -1,7 +1,7 @@
 #![allow(clippy::uninlined_format_args)]
-use crate::cpu::Status;
-use crate::debugger::{Debugger, FrameType::*, WatchType};
-use crate::execute::{BugType, StopReason};
+use crate::debugger::cpu::Status;
+use crate::debugger::debugger::{Debugger, FrameType::*, WatchType};
+use crate::debugger::execute::{BugType, StopReason};
 use crate::syntax;
 use anyhow::{anyhow, bail, Result};
 use clap::ArgMatches;
@@ -299,7 +299,7 @@ impl Shell {
                         }
                     } else {
                         for seg in segs {
-                            println!("{:15} 0x{:04x}-0x{:04x}", seg.name, seg.start, seg.end);
+                            println!("{:15} 0x{:04x} size:{}", seg.name, seg.start, seg.size);
                         }
                     }
                 } else if *args.get_one::<bool>("address_map").unwrap() {
@@ -445,6 +445,9 @@ impl Shell {
                 }
                 BugType::HeapCheck => {
                     println!("heap check failed");
+                }
+                BugType::SegCheck(addr) => {
+                    println!("seg perm check failed {:04x}", addr);
                 }
             },
             StopReason::WatchPoint(addr) => {
