@@ -67,6 +67,14 @@ pub fn syntax() -> Command {
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
+            Command::new("load_source")
+                .alias("xx")
+                .about("Load binary file")
+                .arg(Arg::new("file").required(true))
+                .arg_required_else_help(true)
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
             Command::new("run")
                 .about("Run code")
                 .arg(Arg::new("address"))
@@ -171,6 +179,32 @@ pub fn syntax() -> Command {
                 .about("Write to memory")
                 .arg(arg!(<address> "address to write to"))
                 .arg(arg!(<value> "value, either integer or expression"))
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("dbginfo")
+                .about("display various debug data")
+                .arg(arg!(-s --segments  "display segments"))
+                .arg(arg!(-a --address_map  "display c source address map"))
+                .arg(arg!([arg] "arg"))
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("next_statement")
+                .alias("ns")
+                .about("next statement")
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("step_statement")
+                .alias("ss")
+                .about("step statement")
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("list_source")
+                .alias("lc")
+                .about("list source")
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(

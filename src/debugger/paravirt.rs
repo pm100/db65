@@ -7,7 +7,7 @@ Works the same except
 - stdin,stdout and stderr are explicitly dealt with
 
 */
-use crate::cpu::Cpu;
+use crate::debugger::cpu::Cpu;
 use core::panic;
 use once_cell::sync::Lazy;
 use std::{
@@ -177,7 +177,7 @@ impl ParaVirt {
             }
             2 => {
                 if let Ok(count) = stderr().write(&buf) {
-                    let _ = stderr().flush().unwrap();
+                    stderr().flush().unwrap();
                     count
                 } else {
                     0

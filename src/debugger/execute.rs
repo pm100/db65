@@ -24,10 +24,12 @@ pub enum StopReason {
 pub enum BugType {
     SpMismatch,
     Memcheck(u16),
+    HeapCheck,
+    SegCheck(u16),
 }
 use crate::{
-    cpu::Cpu,
-    debugger::{Debugger, FrameType, StackFrame, WatchType},
+    debugger::cpu::{Cpu, MemCheck},
+    debugger::debugger::{Debugger, FrameType, SourceDebugMode, StackFrame, WatchType},
 };
 use anyhow::anyhow;
 impl Debugger {
@@ -59,6 +61,11 @@ impl Debugger {
                         frame_type: FrameType::Jsr((addr, pc + 3, sp, 0)),
                         stop_on_pop: false,
                     });
+                    if let Some(intercept) = self.call_intercepts.get(&addr) {
+                        if let Some(stop) = intercept(self, false)? {
+                            break 'main_loop stop;
+                        }
+                    }
                 }
 
                 0x60 => {
@@ -68,17 +75,23 @@ impl Debugger {
                             // defer til after we execute the rts
                             finish = true;
                         }
-                        if self.enable_stack_check {
-                            if let FrameType::Jsr((_addr, _ret_addr, fsp, _)) = frame.frame_type {
+
+                        if let FrameType::Jsr((addr, _ret_addr, fsp, _)) = frame.frame_type {
+                            if self.enable_stack_check {
                                 let sp = Cpu::read_sp();
                                 if sp + 2 != fsp {
                                     break StopReason::Bug(BugType::SpMismatch);
                                 }
-                            } else {
-                                // wrong frame type
-                                // same issue with longjmp
-                                //break StopReason::Bug(BugType::SpMismatch);
                             }
+                            if let Some(intercept) = self.call_intercepts.get(&addr) {
+                                if let Some(stop) = intercept(self, true)? {
+                                    break 'main_loop stop;
+                                }
+                            }
+                        } else {
+                            // wrong frame type
+                            // same issue with longjmp
+                            //break StopReason::Bug(BugType::SpMismatch);
                         }
                     } else if self.enable_stack_check {
                         break StopReason::Bug(BugType::SpMismatch);
@@ -150,9 +163,15 @@ impl Debugger {
             }
 
             // invalid memory read check
-            if self.enable_mem_check {
-                if let Some(addr) = Cpu::get_memcheck() {
-                    break StopReason::Bug(BugType::Memcheck(addr));
+            if self.enable_mem_check && !self.in_malloc {
+                match Cpu::get_memcheck() {
+                    MemCheck::None => {}
+                    MemCheck::ReadNoWrite(addr) => {
+                        break 'main_loop StopReason::Bug(BugType::Memcheck(*addr));
+                    }
+                    MemCheck::WriteNoPermission(addr) => {
+                        break 'main_loop StopReason::Bug(BugType::SegCheck(*addr));
+                    }
                 }
             }
 
@@ -210,10 +229,33 @@ impl Debugger {
                 break StopReason::BreakPoint(pc);
             }
 
+            // source mode next and step
+            match &self.source_mode {
+                SourceDebugMode::None => {}
+                SourceDebugMode::Next => {
+                    if let Some(addr_lookup) = self.source_info.get(&pc) {
+                        if let Some(cf) = self.current_file {
+                            if cf == addr_lookup.file_id {
+                                self.source_mode = SourceDebugMode::None;
+                                break 'main_loop StopReason::Next;
+                            }
+                        }
+                    }
+                }
+                SourceDebugMode::Step => {
+                    if let Some(_addr_lookup) = self.source_info.get(&pc) {
+                        self.source_mode = SourceDebugMode::None;
+                        break 'main_loop StopReason::Next;
+                    }
+                }
+            }
             // post instruction clean up
             Cpu::post_inst_reset();
         };
         Cpu::post_inst_reset(); // will have been missed on a break
+        if let Some(f) = self.find_source_line(self.read_pc())? {
+            self.current_file = Some(f.file_id);
+        }
         Ok(reason)
     }
 }

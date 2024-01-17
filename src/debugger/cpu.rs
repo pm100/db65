@@ -18,7 +18,7 @@
 
 */
 
-use crate::paravirt::ParaVirt;
+use crate::debugger::paravirt::ParaVirt;
 use bitflags::bitflags;
 use std::{fmt, os::raw::c_char};
 
@@ -26,31 +26,47 @@ use std::{fmt, os::raw::c_char};
 // this is because the calls to us are 'naked' c calls
 static mut THECPU: Cpu = Cpu {
     ram: [0; 65536],
-    shadow: [0; 65536],
+    shadow: [ShadowFlags::empty(); 65536],
     regs: std::ptr::null_mut(),
     sp65_addr: 0,
     exit: false,
     exit_code: 0,
-    memcheck: None,
+    memcheck: MemCheck::None,
     arg_array: Vec::new(),
     memhits: [(false, 0); 6],
     memhitcount: 0,
     paracall: false,
 };
-pub struct Cpu {
-    ram: [u8; 65536],          // the actual 6502 ram
-    shadow: [u8; 65536],       // a shadow of the ram, used for memcheck
-    regs: *mut CPURegs,        // a pointer to the register block
-    exit: bool,                // set to true when the 6502 wants to exit
-    exit_code: u8,             // the exit code
-    sp65_addr: u8,             // the location of the cc65 'stack' pointer
-    memcheck: Option<u16>,     // the address of the last memcheck failure
-    arg_array: Vec<String>,    // the command line arguments
-    memhits: [(bool, u16); 6], // used for data watches
-    memhitcount: u8,           // entry count in hit array for this instruction
-    pub paracall: bool,        // we just did a pv call
-}
 
+pub enum MemCheck {
+    None,
+    ReadNoWrite(u16),
+    WriteNoPermission(u16),
+}
+pub struct Cpu {
+    ram: [u8; 65536],             // the actual 6502 ram
+    shadow: [ShadowFlags; 65536], // a shadow of the ram, used for memcheck
+    regs: *mut CPURegs,           // a pointer to the register block
+    exit: bool,                   // set to true when the 6502 wants to exit
+    exit_code: u8,                // the exit code
+    sp65_addr: u8,                // the location of the cc65 'stack' pointer
+    memcheck: MemCheck,           // the address of the last memcheck failure
+    arg_array: Vec<String>,       // the command line arguments
+    memhits: [(bool, u16); 6],    // used for data watches
+    memhitcount: u8,              // entry count in hit array for this instruction
+    pub paracall: bool,           // we just did a pv call
+}
+bitflags! {
+    #[derive(Copy, Clone, Default, Debug)]
+   pub struct ShadowFlags:u8{
+        const WRITTEN =     0b0000_0001; // written at some point
+        const EXECUTE =     0b0000_0010; // executable
+        const WRITE =       0b0000_0100;   // writable
+        const TAINTED =     0b0000_1000; // contents derived from uniti data
+        const READ =        0b0001_0000;  // free memory
+
+    }
+}
 // our callable functions into sim65
 extern "C" {
     pub fn ExecuteInsn() -> u32;
@@ -74,7 +90,16 @@ extern "C" {
 extern "C" fn MemWriteByte(addr: u32, val: u8) {
     unsafe {
         THECPU.inner_write_byte(addr as u16, val);
-        THECPU.shadow[addr as usize] = 1;
+        println!(
+            "write byte {:04x} {:02x} {:?}",
+            addr, val, THECPU.shadow[addr as usize]
+        );
+        let flags = THECPU.shadow[addr as usize];
+        if flags.contains(ShadowFlags::WRITE) {
+        } else {
+            THECPU.memcheck = MemCheck::WriteNoPermission(addr as u16);
+        }
+        THECPU.shadow[addr as usize] |= ShadowFlags::WRITTEN;
         THECPU.memhits[THECPU.memhitcount as usize] = (true, addr as u16);
         THECPU.memhitcount += 1;
     }
@@ -82,11 +107,18 @@ extern "C" fn MemWriteByte(addr: u32, val: u8) {
 #[no_mangle]
 extern "C" fn MemReadWord(addr: u32) -> u32 {
     unsafe {
+        println!(
+            "read word {:04x} {:02x} {:?} {:?}",
+            addr,
+            0,
+            THECPU.shadow[addr as usize],
+            THECPU.shadow[(addr as usize) + 1]
+        );
         let w = THECPU.inner_read_word(addr as u16) as u32;
-        if THECPU.shadow[addr as usize] == 0 {
-            THECPU.memcheck = Some(addr as u16);
-        } else if THECPU.shadow[(addr + 1) as usize] == 0 {
-            THECPU.memcheck = Some(addr as u16 + 1);
+        if !THECPU.shadow[addr as usize].contains(ShadowFlags::WRITTEN) {
+            THECPU.memcheck = MemCheck::ReadNoWrite(addr as u16);
+        } else if !THECPU.shadow[(addr + 1) as usize].contains(ShadowFlags::WRITTEN) {
+            THECPU.memcheck = MemCheck::ReadNoWrite(addr as u16 + 1);
         }
         THECPU.memhits[THECPU.memhitcount as usize] = (false, addr as u16);
         THECPU.memhits[(THECPU.memhitcount + 1) as usize] = (false, (addr + 1) as u16);
@@ -98,9 +130,13 @@ extern "C" fn MemReadWord(addr: u32) -> u32 {
 #[no_mangle]
 extern "C" fn MemReadByte(addr: u32) -> u8 {
     unsafe {
+        println!(
+            "read byte {:04x} {:02x} {:?}",
+            addr, 0, THECPU.shadow[addr as usize]
+        );
         let b = THECPU.inner_read_byte(addr as u16);
-        if THECPU.shadow[addr as usize] == 0 {
-            THECPU.memcheck = Some(addr as u16);
+        if !THECPU.shadow[addr as usize].contains(ShadowFlags::WRITTEN) {
+            THECPU.memcheck = MemCheck::ReadNoWrite(addr as u16);
         }
         THECPU.memhits[THECPU.memhitcount as usize] = (false, addr as u16);
         THECPU.memhitcount += 1;
@@ -171,7 +207,7 @@ impl Cpu {
         unsafe {
             THECPU.memhitcount = 0;
             THECPU.paracall = false;
-            THECPU.memcheck = None;
+            THECPU.memcheck = MemCheck::None;
         }
     }
 
@@ -192,8 +228,8 @@ impl Cpu {
             THECPU.arg_array.push(v.to_owned());
         }
     }
-    pub fn get_memcheck() -> Option<u16> {
-        unsafe { THECPU.memcheck }
+    pub fn get_memcheck() -> &'static MemCheck {
+        unsafe { &THECPU.memcheck }
     }
 
     pub fn set_exit(code: u8) {
@@ -221,9 +257,12 @@ impl Cpu {
             THECPU.memhitcount = 0;
             THECPU.arg_array.clear();
             Reset();
-            THECPU.memcheck = None;
+            THECPU.memcheck = MemCheck::None;
             THECPU.paracall = false;
         }
+    }
+    pub fn get_shadow() -> &'static mut [ShadowFlags; 65536] {
+        unsafe { &mut THECPU.shadow }
     }
     pub fn execute_insn() -> u32 {
         unsafe { ExecuteInsn() }
@@ -288,12 +327,14 @@ impl Cpu {
     pub fn write_byte(addr: u16, val: u8) {
         unsafe {
             THECPU.inner_write_byte(addr, val);
-            THECPU.shadow[addr as usize] = 1;
+            THECPU.shadow[addr as usize] |= ShadowFlags::WRITTEN;
         }
     }
     pub fn write_word(addr: u16, val: u16) {
         unsafe {
             THECPU.inner_write_word(addr, val);
+            THECPU.shadow[addr as usize] |= ShadowFlags::WRITTEN;
+            THECPU.shadow[(addr as usize) + 1] |= ShadowFlags::WRITTEN;
         }
     }
 

@@ -1,7 +1,7 @@
 #![allow(clippy::uninlined_format_args)]
-use crate::cpu::Status;
-use crate::debugger::{Debugger, FrameType::*, WatchType};
-use crate::execute::{BugType, StopReason};
+use crate::debugger::cpu::Status;
+use crate::debugger::debugger::{Debugger, FrameType::*, WatchType};
+use crate::debugger::execute::{BugType, StopReason};
 use crate::syntax;
 use anyhow::{anyhow, bail, Result};
 use clap::ArgMatches;
@@ -79,9 +79,9 @@ impl Shell {
                         lastinput = line.clone();
                     };
                     match self.dispatch(&line) {
-                        Err(e) => println!("{}", e), // display error
-                        Ok(true) => break,           // quit was typed
-                        Ok(false) => {}              // continue
+                        Err(e) => println!("{} {}", e, e.backtrace()), // display error
+                        Ok(true) => break,                             // quit was typed
+                        Ok(false) => {}                                // continue
                     }
                 }
                 Err(ReadlineError::Interrupted) => {
@@ -146,18 +146,22 @@ impl Shell {
             }
             Some(("symbols", args)) => {
                 let file = args.get_one::<String>("file").unwrap();
-                self.debugger.load_ll(Path::new(file))?;
+                self.debugger.load_dbg(Path::new(file))?;
             }
             Some(("list_symbols", args)) => {
                 let mtch = args.get_one::<String>("match");
-                let symbols = self.debugger.get_symbols(mtch)?;
-                for (sym, addr) in symbols {
-                    println!("0x{:04x} {}", addr, sym);
+                let symbols = self.debugger.get_dbg_symbols(mtch)?;
+                for (sym, addr, module) in symbols {
+                    println!("0x{:04x} [{}.]{}", addr, module, sym);
                 }
             }
             Some(("load_code", args)) => {
                 let file = args.get_one::<String>("file").unwrap();
                 self.debugger.load_code(Path::new(file))?;
+            }
+            Some(("load_source", args)) => {
+                let file = args.get_one::<String>("file").unwrap();
+                self.debugger.load_source(Path::new(file))?;
             }
 
             Some(("quit", _)) => {
@@ -218,7 +222,11 @@ impl Shell {
                     let frame = &stack[i];
                     match frame.frame_type {
                         Jsr((addr, ret, _sp, _)) => {
-                            println!("jsr {:<10} x{:04x}", self.debugger.symbol_lookup(addr), ret);
+                            println!(
+                                "jsr {:<10} x{:04x}",
+                                self.debugger.symbol_lookup(addr)?,
+                                ret
+                            );
                         }
                         Pha(ac) => println!("pha x{:02x}", ac),
                         Php(sr) => println!("php x{:02x}", sr),
@@ -246,8 +254,8 @@ impl Shell {
                         break;
                     }
                     let delta = self.debugger.dis(&chunk, addr);
-                    let addr_str = self.debugger.symbol_lookup(addr);
-                    if addr_str.starts_with('.') {
+                    let addr_str = self.debugger.symbol_lookup(addr)?;
+                    if !addr_str.starts_with('$') {
                         println!("{}:", addr_str);
                     }
                     println!("{:04x}:       {}", addr, self.debugger.dis_line);
@@ -271,6 +279,35 @@ impl Shell {
                 let expr = args.get_one::<String>("expression").unwrap();
                 let ans = self.expand_expr(expr)?;
                 println!("{:}", ans);
+            }
+
+            Some(("dbginfo", args)) => {
+                if *args.get_one::<bool>("segments").unwrap() {
+                    let segs = self.debugger.get_segments();
+                    if let Some(arg) = args.get_one::<String>("arg") {
+                        if let Some(seg) = segs.iter().find(|s| s.name.as_str() == arg) {
+                            for chunk in seg.modules.iter() {
+                                println!(
+                                    "{:15} 0x{:04x} = 0x{:04x}",
+                                    chunk.module_name,
+                                    chunk.offset,
+                                    seg.start + chunk.offset
+                                );
+                            }
+                        } else {
+                            bail!("unknown segment {}", arg);
+                        }
+                    } else {
+                        for seg in segs {
+                            println!("{:15} 0x{:04x} size:{}", seg.name, seg.start, seg.size);
+                        }
+                    }
+                } else if *args.get_one::<bool>("address_map").unwrap() {
+                    let map = self.debugger.get_addr_map();
+                    for (addr, info) in map {
+                        println!("0x{:04x} {:?}", addr, info);
+                    }
+                }
             }
             Some(("finish", _)) => {
                 if !self.debugger.run_done {
@@ -305,6 +342,21 @@ impl Shell {
 
                 self.debugger.write_byte(addr, value as u8);
             }
+            Some(("next_statement", _)) => {
+                if !self.debugger.run_done {
+                    bail!("program not running");
+                };
+                let reason = self.debugger.next_statement()?;
+                self.stop(reason);
+            }
+            Some(("step_statement", _)) => {
+                if !self.debugger.run_done {
+                    bail!("program not running");
+                };
+                let reason = self.debugger.step_statement()?;
+                self.stop(reason);
+            }
+            Some(("list_source", _)) => {}
             Some((name, _matches)) => unimplemented!("{name}"),
             None => unreachable!("subcommand required"),
         }
@@ -374,6 +426,13 @@ impl Shell {
             }
             StopReason::Exit(_) => {
                 println!("exit");
+                let heap = self.debugger.get_heap_blocks();
+                for (addr, hb) in heap {
+                    println!(
+                        "heap block 0x{:04x} size {} allocated at {:04x}",
+                        addr, hb.size, hb.alloc_addr
+                    );
+                }
                 return;
             }
             StopReason::Count | StopReason::Next => {}
@@ -384,6 +443,12 @@ impl Shell {
                 BugType::Memcheck(addr) => {
                     println!("memory read uninit {:04x}", addr);
                 }
+                BugType::HeapCheck => {
+                    println!("heap check failed");
+                }
+                BugType::SegCheck(addr) => {
+                    println!("seg perm check failed {:04x}", addr);
+                }
             },
             StopReason::WatchPoint(addr) => {
                 let wp = self.debugger.get_watch(addr).unwrap();
@@ -391,8 +456,14 @@ impl Shell {
             }
             StopReason::Finish => {}
         }
-        // disassemble the current instruction
         let inst_addr = self.debugger.read_pc();
+        //  let module = self.debugger.find_module(inst_addr);
+        if let Some(source_info) = self.debugger.find_source_line(inst_addr).unwrap() {
+            println!("{}", source_info.line);
+        }
+        //  println!("{}:", module.unwrap().module_name);
+        // disassemble the current instruction
+
         let mem = self.debugger.get_chunk(self.debugger.read_pc(), 3).unwrap();
         self.debugger.dis(&mem, inst_addr);
 

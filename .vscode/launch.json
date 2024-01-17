@@ -7,23 +7,27 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'db65'",
-            "cargo": {
-                "args": [
-                    "build",
-                    "--bin=db65",
-                    "--package=db65"
-                ],
-                "filter": {
-                    "name": "db65",
-                    "kind": "bin"
-                }
+            "name": "Launch",
+            "program": "${workspaceRoot}/target/debug/db65.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}",
+            "console": "externalTerminal",
+            "env": {
+                "RUST_BACKTRACE": "1"
             },
+            //  "stopOnEntry": true
+        },
+        {
+            "type": "cppvsdbg",
+            "request": "launch",
+            "name": "Debug executable 'db65'",
+            "program": "${workspaceRoot}/target/debug/db65.exe",
             "args": [
                 //  "-c",
                 //  "commands.txt"
             ],
-            "cwd": "${workspaceFolder}"
+            "cwd": "${workspaceFolder}",
+            "console": "externalTerminal",
         },
         {
             "type": "lldb",
