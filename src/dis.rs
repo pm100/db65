@@ -783,18 +783,12 @@ fn test_dis() {
     let len = dbg.dis(&mem, 0);
     assert_eq!(len, 1);
     assert_eq!(dbg.dis_line, "brk   ");
-}
-#[test]
-fn test_dis_ora() {
-    let mut dbg = Debugger::new();
+
     let mem = vec![0x01, 0x01, 0x02];
     let len = dbg.dis(&mem, 0);
     assert_eq!(len, 2);
     assert_eq!(dbg.dis_line, "ora   ($01,X)");
-}
-#[test]
-fn test_jsr() {
-    let mut dbg = Debugger::new();
+
     let mem = vec![0x20, 0x01, 0x02];
     let len = dbg.dis(&mem, 0);
     assert_eq!(len, 3);
