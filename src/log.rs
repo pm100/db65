@@ -1,10 +1,33 @@
 use simplelog::*;
 //use std::fs::File;
 use std::{collections::LinkedList, fs::File};
-
+#[macro_export]
+macro_rules! trace {
+    ($fmt:literal, $($arg:expr),*) => {
+        #[cfg(debug_assertions)]
+        {
+            if cfg!(test){
+                println!($fmt, $($arg),*);
+            } else {
+                log::trace!($fmt, $($arg),*);
+            }
+        }
+    };
+    ($msg:expr) => {
+        #[cfg(debug_assertions)]
+        {
+            if cfg!(test){
+                println!($msg);
+            } else {
+                log::trace!($msg);
+            }
+        }
+    };
+}
+pub(crate) use trace;
 pub fn init_log() {
     CombinedLogger::init(vec![WriteLogger::new(
-        LevelFilter::Trace,
+        LevelFilter::Error,
         ConfigBuilder::new()
             .add_filter_ignore_str("rustyline")
             .build(),

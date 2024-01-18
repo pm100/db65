@@ -4,6 +4,7 @@ use crate::debugger::debugger::{Debugger, FrameType::*, WatchType};
 use crate::debugger::execute::{BugType, StopReason};
 use crate::syntax;
 use anyhow::{anyhow, bail, Result};
+use clap::builder::Str;
 use clap::ArgMatches;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
@@ -457,11 +458,15 @@ impl Shell {
             StopReason::Finish => {}
         }
         let inst_addr = self.debugger.read_pc();
-        //  let module = self.debugger.find_module(inst_addr);
+        let module = if let Some(&ref m) = self.debugger.find_module(inst_addr) {
+            m.module_name.clone()
+        } else {
+            String::new()
+        };
         if let Some(source_info) = self.debugger.find_source_line(inst_addr).unwrap() {
-            println!("{}", source_info.line);
+            println!("{}:{}    {}", module, source_info.line_no, source_info.line);
         }
-        //  println!("{}:", module.unwrap().module_name);
+        println!("{}:", module);
         // disassemble the current instruction
 
         let mem = self.debugger.get_chunk(self.debugger.read_pc(), 3).unwrap();

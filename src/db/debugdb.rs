@@ -129,29 +129,7 @@ impl DebugData {
         }
         Ok(v)
     }
-    pub fn get_symbolx(&self, name: &str) -> Result<Option<u16>> {
-        let mut stmt = self
-            .conn
-            .prepare_cached("select symdef.val from symdef where symdef.name = ?1")?;
-        let mut rows = stmt.query(params![name])?;
-        if let Some(row) = rows.next()? {
-            let val: i64 = row.get(0)?;
-            return Ok(Some(val as u16));
-        }
-        Ok(None)
-    }
 
-    pub fn find_symbolx(&self, addr: u16) -> Result<Option<String>> {
-        let mut stmt = self.conn.prepare_cached(
-            "select symdef.name from symdef where symdef.val = ?1 and seg not null",
-        )?;
-        let mut rows = stmt.query(params![addr])?;
-        if let Some(row) = rows.next()? {
-            let val: String = row.get(0)?;
-            return Ok(Some(val));
-        }
-        Ok(None)
-    }
     pub fn find_symbol(&self, addr: u16) -> Result<Option<String>> {
         let ans = self.query_db(
             params![addr],

@@ -28,13 +28,21 @@ pub enum SourceDebugMode {
     Next,
     Step,
 }
+
+pub enum DebugMode {
+    Unknown,
+    Source,
+    Assembler,
+}
+
+type InterceptFunc = fn(&mut Debugger, bool) -> Result<Option<StopReason>>;
 pub struct Debugger {
     pub break_points: HashMap<u16, BreakPoint>,
     pub(crate) watch_points: HashMap<u16, WatchPoint>,
     pub(crate) source_info: BTreeMap<u16, AddrSource>,
     pub(crate) current_file: Option<i64>,
     pub(crate) next_bp: Option<u16>,
-    pub(crate) call_intercepts: HashMap<u16, fn(&mut Debugger, bool) -> Result<Option<StopReason>>>,
+    pub(crate) call_intercepts: HashMap<u16, InterceptFunc>,
     loader_start: u16,
     pub(crate) source_mode: SourceDebugMode,
     pub(crate) dis_line: String,
@@ -48,7 +56,8 @@ pub struct Debugger {
     pub(crate) dbgdb: DebugData,
     pub(crate) seg_list: Vec<Segment>,
     pub(crate) heap_blocks: HashMap<u16, HeapBlock>,
-    pub(crate) in_malloc: bool,
+    pub(crate) privileged_mode: bool,
+    pub(crate) debug_mode: DebugMode,
 }
 
 pub struct HeapBlock {
@@ -130,7 +139,8 @@ impl Debugger {
             source_mode: SourceDebugMode::None,
             call_intercepts: HashMap::new(),
             heap_blocks: HashMap::new(),
-            in_malloc: false,
+            privileged_mode: false,
+            debug_mode: DebugMode::Unknown,
         }
     }
     pub fn delete_breakpoint(&mut self, id_opt: Option<&String>) -> Result<()> {
@@ -185,90 +195,6 @@ impl Debugger {
         Ok(())
     }
 
-    fn load_intercepts(&mut self) -> Result<()> {
-        let malloc = self.dbgdb.get_symbol("malloc._malloc")?;
-        if malloc.len() == 1 {
-            self.call_intercepts
-                .insert(malloc[0].1, |d, f| d.malloc_intercept(f));
-        };
-        let free = self.dbgdb.get_symbol("free._free")?;
-        if free.len() == 1 {
-            self.call_intercepts
-                .insert(free[0].1, |d, f| d.free_intercept(f));
-        };
-        Ok(())
-    }
-    fn ac_xr() -> u16 {
-        let ac = Cpu::read_ac();
-        let xr = Cpu::read_xr();
-        (xr as u16) << 8 | (ac as u16)
-    }
-    fn malloc_intercept(&mut self, ret: bool) -> Result<Option<StopReason>> {
-        if ret {
-            // return from malloc, we know the address now
-            self.in_malloc = false;
-            let addr = Self::ac_xr();
-            if addr == 0 {
-                // malloc returned null
-                return Ok(None);
-            }
-            let new_block = if let Some(hb) = self.heap_blocks.get(&0) {
-                (hb.alloc_addr, hb.size)
-            } else {
-                bail!("missing 0 heap block");
-            };
-            let hb = HeapBlock {
-                addr,
-                size: new_block.1,
-                alloc_addr: new_block.0,
-            };
-            // delete the temporary 0 block
-            self.heap_blocks.remove(&0);
-            self.heap_blocks.insert(addr, hb);
-
-            // now update the shadow memory
-            let shadow = Cpu::get_shadow();
-            for i in addr..addr + new_block.1 {
-                shadow[i as usize] |= ShadowFlags::READ | ShadowFlags::WRITE;
-            }
-            //       println!("malloc ret {:04x}", addr);
-        } else {
-            // at the time of call to malloc we do not know the address
-            // so create a temporary entry with addr = 0
-            let size = Self::ac_xr();
-            let hb = HeapBlock {
-                addr: 0,
-                size,
-                alloc_addr: Cpu::read_pc(),
-            };
-            //            println!("malloc call {} @ {:04x}", size, hb.alloc_addr);
-            self.heap_blocks.insert(0, hb);
-            self.in_malloc = true;
-        };
-
-        Ok(None)
-    }
-    fn free_intercept(&mut self, ret: bool) -> Result<Option<StopReason>> {
-        if !ret {
-            let addr = Self::ac_xr();
-            if addr == 0 {
-                // free of null
-                return Ok(None);
-            }
-            let old = if let Some(hb) = self.heap_blocks.get(&addr) {
-                (hb.size, hb.addr)
-            } else {
-                return Ok(Some(StopReason::Bug(BugType::HeapCheck)));
-            };
-            self.heap_blocks.remove(&addr);
-            let shadow = Cpu::get_shadow();
-            for i in addr..addr + old.0 {
-                shadow[i as usize] = ShadowFlags::empty();
-            }
-        }
-
-        Ok(None)
-    }
     pub fn next_statement(&mut self) -> Result<StopReason> {
         self.source_mode = SourceDebugMode::Next;
         self.execute(0)

@@ -17,8 +17,8 @@
 
 
 */
-
 use crate::debugger::paravirt::ParaVirt;
+use crate::log::trace;
 use bitflags::bitflags;
 use std::{fmt, os::raw::c_char};
 
@@ -36,6 +36,12 @@ static mut THECPU: Cpu = Cpu {
     memhits: [(false, 0); 6],
     memhitcount: 0,
     paracall: false,
+    tainted_ac: false,
+    tainted_xr: false,
+    tainted_yr: false,
+    tainted_zr: false,
+    tainted_sr: false,
+    tainted_sp: false,
 };
 
 pub enum MemCheck {
@@ -55,6 +61,12 @@ pub struct Cpu {
     memhits: [(bool, u16); 6],    // used for data watches
     memhitcount: u8,              // entry count in hit array for this instruction
     pub paracall: bool,           // we just did a pv call
+    tainted_ac: bool,             // the ac is tainted
+    tainted_xr: bool,             // the xr is tainted
+    tainted_yr: bool,             // the yr is tainted
+    tainted_zr: bool,             // the zr is tainted
+    tainted_sr: bool,             // the sr is tainted
+    tainted_sp: bool,             // the sp is tainted
 }
 bitflags! {
     #[derive(Copy, Clone, Default, Debug)]
@@ -90,9 +102,11 @@ extern "C" {
 extern "C" fn MemWriteByte(addr: u32, val: u8) {
     unsafe {
         THECPU.inner_write_byte(addr as u16, val);
-        println!(
+        trace!(
             "write byte {:04x} {:02x} {:?}",
-            addr, val, THECPU.shadow[addr as usize]
+            addr,
+            val,
+            THECPU.shadow[addr as usize]
         );
         let flags = THECPU.shadow[addr as usize];
         if flags.contains(ShadowFlags::WRITE) {
@@ -107,7 +121,7 @@ extern "C" fn MemWriteByte(addr: u32, val: u8) {
 #[no_mangle]
 extern "C" fn MemReadWord(addr: u32) -> u32 {
     unsafe {
-        println!(
+        trace!(
             "read word {:04x} {:02x} {:?} {:?}",
             addr,
             0,
@@ -130,9 +144,11 @@ extern "C" fn MemReadWord(addr: u32) -> u32 {
 #[no_mangle]
 extern "C" fn MemReadByte(addr: u32) -> u8 {
     unsafe {
-        println!(
+        trace!(
             "read byte {:04x} {:02x} {:?}",
-            addr, 0, THECPU.shadow[addr as usize]
+            addr,
+            0,
+            THECPU.shadow[addr as usize]
         );
         let b = THECPU.inner_read_byte(addr as u16);
         if !THECPU.shadow[addr as usize].contains(ShadowFlags::WRITTEN) {

@@ -3,10 +3,10 @@
 use crate::{log::init_log, shell::Shell};
 use anyhow::Result;
 use clap::Parser;
-use std::{path::PathBuf};
+use std::path::PathBuf;
 
 #[macro_export]
-macro_rules! trace {
+macro_rules! tracexx {
     ($fmt:literal, $($arg:expr),*) => {
         #[cfg(debug_assertions)]
         {
@@ -33,11 +33,13 @@ mod log;
 mod db {
     pub mod debugdb;
     pub mod parsedb;
+    pub mod setupdb;
 }
 mod debugger {
     pub mod cpu;
     pub mod debugger;
     pub mod execute;
+    pub mod intercepts;
     pub mod loader;
     pub mod paravirt;
 }

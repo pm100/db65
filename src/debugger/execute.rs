@@ -48,7 +48,7 @@ impl Debugger {
             ===============================================================*/
 
             let inst = Cpu::read_byte(pc);
-            let mut finish = false;
+            let mut deferred_stop: Option<StopReason> = None;
             match inst {
                 0x20 => {
                     // jsr
@@ -63,7 +63,9 @@ impl Debugger {
                     });
                     if let Some(intercept) = self.call_intercepts.get(&addr) {
                         if let Some(stop) = intercept(self, false)? {
-                            break 'main_loop stop;
+                            // if the intercept says stop, we defer it
+                            // otherwise we cant hit 'go'
+                            deferred_stop = Some(stop);
                         }
                     }
                 }
@@ -73,7 +75,7 @@ impl Debugger {
                     if let Some(frame) = self.stack_frames.pop() {
                         if frame.stop_on_pop {
                             // defer til after we execute the rts
-                            finish = true;
+                            deferred_stop = Some(StopReason::Finish);
                         }
 
                         if let FrameType::Jsr((addr, _ret_addr, fsp, _)) = frame.frame_type {
@@ -163,7 +165,7 @@ impl Debugger {
             }
 
             // invalid memory read check
-            if self.enable_mem_check && !self.in_malloc {
+            if self.enable_mem_check && !self.privileged_mode {
                 match Cpu::get_memcheck() {
                     MemCheck::None => {}
                     MemCheck::ReadNoWrite(addr) => {
@@ -183,8 +185,8 @@ impl Debugger {
                 }
             }
             // did we just pop a stop_on_pop frame?
-            if finish {
-                break StopReason::Finish;
+            if let Some(stop) = deferred_stop {
+                break 'main_loop stop;
             }
 
             let pc = Cpu::read_pc();
