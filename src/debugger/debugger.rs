@@ -12,11 +12,13 @@ use std::{
     fmt::Debug,
     fs::File,
     io::BufReader,
+    panic::Location,
     path::Path,
 };
 
 use crate::{
-    db::debugdb::{AddrSource, DebugData, SourceInfo},
+    built_info::GIT_HEAD_REF,
+    db::debugdb::{DebugData, SourceFile, SourceInfo},
     debugger::cpu::{Cpu, ShadowFlags},
     debugger::execute::{BugType, StopReason},
     debugger::loader,
@@ -34,12 +36,23 @@ pub enum DebugMode {
     Source,
     Assembler,
 }
-
+#[derive(Debug)]
+pub struct CodeLocation {
+    pub module: Option<i32>,
+    pub cfile: Option<i64>,
+    pub cline: i64,
+    pub ctext: Option<String>,
+    pub afile: Option<i64>,
+    pub aline: i64,
+    pub seg: u8,
+    pub offset: u16,
+    pub absaddr: u16,
+}
 type InterceptFunc = fn(&mut Debugger, bool) -> Result<Option<StopReason>>;
 pub struct Debugger {
     pub break_points: HashMap<u16, BreakPoint>,
     pub(crate) watch_points: HashMap<u16, WatchPoint>,
-    pub(crate) source_info: BTreeMap<u16, AddrSource>,
+    pub(crate) source_info: BTreeMap<u16, SourceInfo>,
     pub(crate) current_file: Option<i64>,
     pub(crate) next_bp: Option<u16>,
     pub(crate) call_intercepts: HashMap<u16, InterceptFunc>,
@@ -58,6 +71,7 @@ pub struct Debugger {
     pub(crate) heap_blocks: HashMap<u16, HeapBlock>,
     pub(crate) privileged_mode: bool,
     pub(crate) debug_mode: DebugMode,
+    pub(crate) file_table: HashMap<i64, SourceFile>,
 }
 
 pub struct HeapBlock {
@@ -69,6 +83,7 @@ pub struct SegChunk {
     pub offset: u16,
     pub module: i32,
     pub module_name: String,
+    pub size: u16,
 }
 pub struct Segment {
     pub id: u8,       // number in db
@@ -141,6 +156,7 @@ impl Debugger {
             heap_blocks: HashMap::new(),
             privileged_mode: false,
             debug_mode: DebugMode::Unknown,
+            file_table: HashMap::new(),
         }
     }
     pub fn delete_breakpoint(&mut self, id_opt: Option<&String>) -> Result<()> {
@@ -206,7 +222,7 @@ impl Debugger {
     pub fn find_source_line(&self, addr: u16) -> Result<Option<SourceInfo>> {
         self.dbgdb.find_source_line(addr)
     }
-    pub fn get_addr_map(&self) -> &BTreeMap<u16, AddrSource> {
+    pub fn get_addr_map(&self) -> &BTreeMap<u16, SourceInfo> {
         &self.source_info
     }
     fn init_shadow(&self) -> Result<()> {
@@ -272,6 +288,7 @@ impl Debugger {
         self.dbgdb.load_all_source_files(&mut self.source_info)?;
         self.load_intercepts()?;
         self.init_shadow()?;
+        self.dbgdb.load_files(&mut self.file_table)?;
         Ok(())
     }
     pub fn load_source(&mut self, file: &Path) -> Result<()> {
@@ -351,6 +368,8 @@ impl Debugger {
             Cpu::push_arg(arg)
         }
         self.stack_frames.clear();
+        self.heap_blocks.clear();
+
         self.run_done = true;
         self.execute(0) // 0 = forever
     }
@@ -493,5 +512,81 @@ impl Debugger {
             current_mod = i;
         }
         Some(&seg.modules[current_mod])
+    }
+
+    pub fn where_are_we(&mut self, addr: u16) -> Result<CodeLocation> {
+        let mut location = CodeLocation {
+            module: None,
+            cfile: None,
+            cline: 0,
+            ctext: None,
+            afile: None,
+            aline: 0,
+            seg: 0,
+            offset: 0,
+            absaddr: addr,
+        };
+        // do we have any debug data at all?
+        if self.seg_list.is_empty() {
+            return Ok(location);
+        }
+
+        // find the segment
+        let mut current = 0;
+        for i in 1..self.seg_list.len() {
+            if self.seg_list[i].start > addr {
+                break;
+            }
+            current = i;
+        }
+
+        // find the module slice in the segment
+        let seg = &self.seg_list[current];
+        if seg.modules.is_empty() {
+            return Ok(location);
+        }
+
+        let rel_addr = addr - seg.start;
+        let mut current_mod = 0;
+        for i in 1..seg.modules.len() {
+            if seg.modules[i].offset > rel_addr {
+                break;
+            }
+            current_mod = i;
+        }
+
+        // we have segment and module
+        location.seg = seg.id;
+        location.module = Some(seg.modules[current_mod].module);
+
+        // now find the assembly line
+        if let Some(aline) = self.dbgdb.find_assembly_line(addr)? {
+            location.aline = aline.line_no;
+            location.afile = Some(aline.file_id);
+            location.offset = aline.addr;
+            location.absaddr = addr;
+            location.seg = aline.seg;
+        }
+
+        // now find the c line
+        if let Some(cline) = self.dbgdb.find_c_line(addr)? {
+            // this will always find something but it might not be the right one
+
+            let mstart = seg.modules[current_mod].offset + seg.start;
+            let mend = mstart + seg.modules[current_mod].size;
+            if cline.absaddr >= mstart && cline.absaddr < mend {
+                location.cline = cline.line_no;
+                location.cfile = Some(cline.file_id);
+                location.offset = cline.addr;
+                location.absaddr = addr;
+                location.seg = cline.seg;
+                location.ctext = Some(cline.line);
+            }
+        }
+
+        Ok(location)
+    }
+    pub fn lookup_file(&self, file_id: i64) -> Option<&SourceFile> {
+        self.file_table.get(&file_id)
     }
 }

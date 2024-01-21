@@ -418,72 +418,92 @@ impl Shell {
         }
         println!("{}", line);
     }
-    fn stop(&mut self, reason: StopReason) {
+    fn stop(&mut self, reason: StopReason) -> Result<()> {
         // common handler for when execution is interrupted
+
+        // first of all explain why we stopped
+
         match reason {
             StopReason::BreakPoint(bp_addr) => {
                 let bp = self.debugger.get_bp(bp_addr).unwrap();
                 println!("bp #{} {}", bp.number, bp.symbol);
             }
             StopReason::Exit(_) => {
-                println!("exit");
+                println!("Exit");
                 let heap = self.debugger.get_heap_blocks();
                 for (addr, hb) in heap {
                     println!(
-                        "heap block 0x{:04x} size {} allocated at {:04x}",
+                        "Heap block 0x{:04x} size {} leaked at {:04x}",
                         addr, hb.size, hb.alloc_addr
                     );
                 }
-                return;
+                return Ok(());
             }
             StopReason::Count | StopReason::Next => {}
             StopReason::Bug(bug) => match bug {
                 BugType::SpMismatch => {
-                    println!("stack pointer mismatch");
+                    println!("Stack pointer mismatch");
                 }
                 BugType::Memcheck(addr) => {
-                    println!("memory read uninit {:04x}", addr);
+                    println!("Unitialized memory read -> {:04x}", addr);
                 }
                 BugType::HeapCheck => {
-                    println!("heap check failed");
+                    println!("Heap check failed");
                 }
                 BugType::SegCheck(addr) => {
-                    println!("seg perm check failed {:04x}", addr);
+                    println!("Seg write violation -> {:04x}", addr);
                 }
             },
             StopReason::WatchPoint(addr) => {
                 let wp = self.debugger.get_watch(addr).unwrap();
-                println!("watch #{} 0x{:04x} ({}) ", wp.number, wp.addr, wp.symbol);
+                println!("Watch #{} 0x{:04x} ({}) ", wp.number, wp.addr, wp.symbol);
             }
             StopReason::Finish => {}
         }
+
+        // now display where we are
         let inst_addr = self.debugger.read_pc();
-        let module = if let Some(&ref m) = self.debugger.find_module(inst_addr) {
-            m.module_name.clone()
+        let waw = self.debugger.where_are_we(inst_addr)?;
+        //    println!("0x{:04x} {:?}", inst_addr, waw);
+
+        // let module = if let Some(&ref m) = self.debugger.find_module(inst_addr) {
+        //     m.module_name.clone()
+        // } else {
+        //     String::new()
+        // };
+        // if let Some(cline) = self.debugger.find_source_line(inst_addr).unwrap() {
+        //     println!("{}:{}    {}", module, source_info.line_no, source_info.line);
+        // }
+        //println!("{}:", module);
+        if let Some(cf) = waw.cfile {
+            let file_name = self.debugger.lookup_file(cf).unwrap();
+            println!(
+                "{}:{}\t\t{}",
+                file_name.short_name,
+                waw.cline,
+                waw.ctext.unwrap()
+            );
         } else {
-            String::new()
+            // disassemble the current instruction
+
+            let mem = self.debugger.get_chunk(self.debugger.read_pc(), 3).unwrap();
+            self.debugger.dis(&mem, inst_addr);
+
+            // print pc, dissasembled instruction and registers
+
+            let stat = Status::from_bits_truncate(self.debugger.read_sr());
+            println!(
+                "{:04x}:       {:<15} ac=${:02x} xr=${:02x} yr=${:02x} sp=${:02x} sr=${:02x} {:?}",
+                self.debugger.read_pc(),
+                self.debugger.dis_line,
+                self.debugger.read_ac(),
+                self.debugger.read_xr(),
+                self.debugger.read_yr(),
+                self.debugger.read_sp(),
+                stat,
+                stat
+            );
         };
-        if let Some(source_info) = self.debugger.find_source_line(inst_addr).unwrap() {
-            println!("{}:{}    {}", module, source_info.line_no, source_info.line);
-        }
-        println!("{}:", module);
-        // disassemble the current instruction
-
-        let mem = self.debugger.get_chunk(self.debugger.read_pc(), 3).unwrap();
-        self.debugger.dis(&mem, inst_addr);
-
-        // print pc, dissasembled instruction and registers
-        let stat = Status::from_bits_truncate(self.debugger.read_sr());
-        println!(
-            "{:04x}:       {:<15} ac=${:02x} xr=${:02x} yr=${:02x} sp=${:02x} sr=${:02x} {:?}",
-            self.debugger.read_pc(),
-            self.debugger.dis_line,
-            self.debugger.read_ac(),
-            self.debugger.read_xr(),
-            self.debugger.read_yr(),
-            self.debugger.read_sp(),
-            stat,
-            stat
-        );
+        Ok(())
     }
 }

@@ -1,6 +1,8 @@
 use anyhow::{anyhow, bail, Result};
 use evalexpr::Value;
 //pub const NO_PARAMS:  = [];
+use crate::db::util::Extract;
+use crate::debugger::debugger::{SegChunk, Segment};
 use rusqlite::{
     params,
     types::{Null, Value as SqlValue},
@@ -12,8 +14,6 @@ use std::{
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
-
-use crate::debugger::debugger::{SegChunk, Segment};
 #[derive(Debug)]
 pub struct SourceInfo {
     pub file_id: i64,
@@ -24,17 +24,25 @@ pub struct SourceInfo {
     pub absaddr: u16,
 }
 #[derive(Debug)]
-pub struct AddrSource {
+pub struct AddrSourcexx {
     pub file_id: i64,
     pub line_no: i64,
     pub seg: u8,
     pub addr: u16,
     pub absaddr: u16,
 }
+
+pub struct SourceFile {
+    pub file_id: i64,
+    pub short_name: String,
+    pub full_path: PathBuf,
+    pub loaded: bool,
+}
 pub struct DebugData {
     pub conn: Connection,
-    cc65_dir: Option<PathBuf>,
+    pub cc65_dir: Option<PathBuf>,
 }
+
 impl DebugData {
     pub fn new() -> Result<DebugData> {
         let dbfile = "dbg.db";
@@ -130,6 +138,29 @@ impl DebugData {
         Ok(v)
     }
 
+    pub fn load_files(&mut self, file_table: &mut HashMap<i64, SourceFile>) -> Result<()> {
+        let rows = self.query_db(&[], "select name,id from file")?;
+
+        for row in rows {
+            let name = row[0].vto_string()?;
+            let id = row[1].vto_i64()?;
+            let path = Path::new(&name);
+            if let Some(p) = self.find_file(path)? {
+                let sf = SourceFile {
+                    file_id: id,
+                    short_name: p.file_name().unwrap().to_str().unwrap().to_string(),
+                    full_path: p.to_path_buf(),
+                    loaded: false,
+                };
+                file_table.insert(id, sf);
+                println!("found file {}", p.display());
+            } else {
+                println!("can't find file {}", name);
+            }
+        }
+        Ok(())
+    }
+
     pub fn find_symbol(&self, addr: u16) -> Result<Option<String>> {
         let ans = self.query_db(
             params![addr],
@@ -160,28 +191,6 @@ impl DebugData {
         Ok(())
     }
 
-    fn find_file(&self, file: &Path) -> Result<Option<PathBuf>> {
-        // find a file somewhere
-        if file.is_absolute() {
-            if file.exists() {
-                return Ok(Some(file.to_path_buf()));
-            }
-        } else {
-            if let Some(cc65) = &self.cc65_dir {
-                let mut p = PathBuf::new();
-                p.push(cc65);
-                p.push("libsrc");
-                p.push(file);
-                if p.exists() {
-                    return Ok(Some(p));
-                }
-            }
-            if file.exists() {
-                return Ok(Some(file.to_path_buf()));
-            }
-        }
-        Ok(None)
-    }
     pub fn load_source_file(&mut self, file: &Path) -> Result<()> {
         println!("load source file {}", file.display());
 
@@ -239,7 +248,7 @@ impl DebugData {
         tx.commit()?;
         Ok(())
     }
-    pub fn load_all_source_files(&mut self, map: &mut BTreeMap<u16, AddrSource>) -> Result<()> {
+    pub fn load_all_source_files(&mut self, map: &mut BTreeMap<u16, SourceInfo>) -> Result<()> {
         let rows = self.query_db(&[], "select distinct file from cline")?;
 
         for row in rows {
@@ -282,7 +291,7 @@ impl DebugData {
     pub fn get_source_file_lines2(
         &self,
         file: i64,
-        hash: &mut BTreeMap<u16, AddrSource>,
+        hash: &mut BTreeMap<u16, SourceInfo>,
     ) -> Result<()> {
         let mut stmt = self.conn.prepare_cached(
             "select line,seg,addr, (cline.addr+ segment.start) as absaddr
@@ -293,12 +302,12 @@ impl DebugData {
             let seg = row.get::<usize, i64>(1)?;
             let addr = row.get::<usize, u16>(2)?;
             let absaddr = row.get::<usize, u16>(3)?;
-            Ok(AddrSource {
+            Ok(SourceInfo {
                 line_no,
                 seg: seg as u8,
                 addr,
                 absaddr,
-
+                line: String::new(),
                 file_id: file,
             })
         })?;
@@ -314,13 +323,6 @@ impl DebugData {
             "select * from (select * from source_line order by absaddr desc) where absaddr <= ?1 limit 1";
         let mut stmt = self.conn.prepare_cached(sql)?;
         match stmt.query_row(params![addr], |row| {
-            // id integer primary key,
-            // file integer,
-            // line text not null,
-            // line_no integer,
-            // seg integer,
-            // addr integer,
-            // absaddr integer
             let file = row.get::<usize, i64>(1)?;
             let line = row.get::<usize, String>(2)?;
             let line_no = row.get::<usize, i64>(3)?;
@@ -384,12 +386,13 @@ impl DebugData {
                 Ok((name, id, file, seg, start, size))
             })?
         {
-            let (name, id, _file, segid, start, _size) = chunk?;
+            let (name, id, _file, segid, start, size) = chunk?;
             if let Some(seg) = seg_list.iter_mut().find(|s| s.id == segid as u8) {
                 seg.modules.push(SegChunk {
                     offset: start,
                     module: id as i32,
                     module_name: name,
+                    size: size,
                 });
             } else {
                 println!("bad segid {}", segid);
@@ -397,43 +400,63 @@ impl DebugData {
         }
         Ok(())
     }
+    pub fn find_assembly_line(&mut self, addr: u16) -> Result<Option<SourceInfo>> {
+        let sql = "select * from
+            (select file,line,seg,addr, (aline.addr+ segment.start) as absaddr
+            from  aline, segment where segment.id = aline.seg order by absaddr desc)
+            where absaddr <= ?1 limit 1";
 
-    fn guess_cc65_dir(&self) -> Result<Option<PathBuf>> {
-        let ans = self.query_db(&[], "select name from file")?;
-        for row in ans {
-            if let SqlValue::Text(s) = &row[0] {
-                let path = Path::new(s);
-                if path.is_absolute() {
-                    if let Some(p) = path.parent() {
-                        if p.ends_with("include") {
-                            return Ok(Some(p.parent().unwrap().to_path_buf()));
-                        }
-                    }
-                }
-            }
-        }
-        Ok(None)
+        self.internal_find_line(addr, sql)
     }
-
-    // general purpose query function
-    fn query_db(&self, params: &[&dyn ToSql], query: &str) -> Result<Vec<Vec<SqlValue>>> {
-        let mut stmt = self.conn.prepare_cached(query)?;
-        let cols = stmt.column_count();
-
-        for (i, p) in params.iter().enumerate() {
-            stmt.raw_bind_parameter(i + 1, p)?;
-        }
-        let mut rows = stmt.raw_query();
-        let mut result = Vec::new();
-        while let Some(r) = rows.next()? {
-            let mut row_vec = Vec::new();
-            for i in 0..cols {
-                let val = r.get::<usize, SqlValue>(i).unwrap();
-                row_vec.push(val);
+    fn internal_find_line(&mut self, addr: u16, sql: &str) -> Result<Option<SourceInfo>> {
+        let mut stmt = self.conn.prepare_cached(sql)?;
+        match stmt.query_row(params![addr], |row| {
+            let file = row.get::<usize, i64>(0)?;
+            let line_no = row.get::<usize, i64>(1)?;
+            let seg = row.get::<usize, u8>(2)?;
+            let addr = row.get::<usize, u16>(3)?;
+            let absaddr = row.get::<usize, u16>(4)?;
+            Ok(SourceInfo {
+                line: String::new(),
+                line_no,
+                file_id: file,
+                seg,
+                addr,
+                absaddr,
+            })
+        }) {
+            Ok(info) => Ok(Some(info)),
+            Err(e) => {
+                println!("{:?}", e);
+                Ok(None)
             }
-            result.push(row_vec);
         }
-
-        Ok(result)
+    }
+    pub fn get_file_line(&mut self, file: i64, line_no: i64) -> Result<Option<String>> {
+        let sql = "select line from source_line where file = ?1 and line_no = ?2";
+        let mut stmt = self.conn.prepare_cached(sql)?;
+        match stmt.query_row(params![file, line_no], |row| {
+            let line = row.get::<usize, String>(0)?;
+            Ok(line)
+        }) {
+            Ok(info) => Ok(Some(info)),
+            Err(e) => {
+                println!("{:?}", e);
+                Ok(None)
+            }
+        }
+    }
+    pub fn find_c_line(&mut self, addr: u16) -> Result<Option<SourceInfo>> {
+        let sql = "select * from
+            (select file,line,seg,addr, (cline.addr+ segment.start) as absaddr
+            from  cline, segment where segment.id = cline.seg order by absaddr desc)
+            where absaddr <= ?1 limit 1";
+        let mut loc = self.internal_find_line(addr, sql)?;
+        if let Some(ref mut cline) = &mut loc {
+            if let Some(l) = self.get_file_line(cline.file_id, cline.line_no)? {
+                cline.line = l;
+            }
+        }
+        Ok(loc)
     }
 }
