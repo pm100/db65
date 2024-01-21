@@ -5,35 +5,12 @@ use anyhow::Result;
 use clap::Parser;
 use std::path::PathBuf;
 
-#[macro_export]
-macro_rules! tracexx {
-    ($fmt:literal, $($arg:expr),*) => {
-        #[cfg(debug_assertions)]
-        {
-            if cfg!(test){
-                println!($fmt, $($arg),*);
-            } else {
-                log::trace!($fmt, $($arg),*);
-            }
-        }
-    };
-    ($msg:expr) => {
-        #[cfg(debug_assertions)]
-        {
-            if cfg!(test){
-                println!($msg);
-            } else {
-                log::trace!($msg);
-            }
-        }
-    };
-}
-
 mod log;
 mod db {
     pub mod debugdb;
     pub mod parsedb;
     pub mod setupdb;
+    pub mod util;
 }
 mod debugger {
     pub mod cpu;

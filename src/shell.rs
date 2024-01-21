@@ -223,6 +223,18 @@ impl Shell {
                     let frame = &stack[i];
                     match frame.frame_type {
                         Jsr((addr, ret, _sp, _)) => {
+                            let waw = self.debugger.where_are_we(ret)?;
+                            if let Some(cf) = waw.cfile {
+                                let file_name = self.debugger.lookup_file(cf).unwrap();
+                                println!(
+                                    "{}:{}\t\t{}",
+                                    file_name.short_name,
+                                    waw.cline,
+                                    waw.ctext.unwrap()
+                                );
+                            } else {
+                                println!("0x{:04x}", addr);
+                            }
                             println!(
                                 "jsr {:<10} x{:04x}",
                                 self.debugger.symbol_lookup(addr)?,

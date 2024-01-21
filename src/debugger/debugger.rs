@@ -514,7 +514,7 @@ impl Debugger {
         Some(&seg.modules[current_mod])
     }
 
-    pub fn where_are_we(&mut self, addr: u16) -> Result<CodeLocation> {
+    pub fn where_are_we(&self, addr: u16) -> Result<CodeLocation> {
         let mut location = CodeLocation {
             module: None,
             cfile: None,
@@ -532,13 +532,18 @@ impl Debugger {
         }
 
         // find the segment
-        let mut current = 0;
-        for i in 1..self.seg_list.len() {
-            if self.seg_list[i].start > addr {
-                break;
-            }
-            current = i;
+
+        let seghit = self
+            .seg_list
+            .iter()
+            .enumerate()
+            .find(|s| s.1.start <= addr && s.1.start + s.1.size > addr);
+
+        if seghit.is_none() {
+            return Ok(location);
         }
+
+        let current = seghit.unwrap().0;
 
         // find the module slice in the segment
         let seg = &self.seg_list[current];
@@ -548,7 +553,7 @@ impl Debugger {
 
         let rel_addr = addr - seg.start;
         let mut current_mod = 0;
-        for i in 1..seg.modules.len() {
+        for i in 0..seg.modules.len() {
             if seg.modules[i].offset > rel_addr {
                 break;
             }

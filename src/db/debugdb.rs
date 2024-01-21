@@ -400,7 +400,7 @@ impl DebugData {
         }
         Ok(())
     }
-    pub fn find_assembly_line(&mut self, addr: u16) -> Result<Option<SourceInfo>> {
+    pub fn find_assembly_line(& self, addr: u16) -> Result<Option<SourceInfo>> {
         let sql = "select * from
             (select file,line,seg,addr, (aline.addr+ segment.start) as absaddr
             from  aline, segment where segment.id = aline.seg order by absaddr desc)
@@ -408,7 +408,7 @@ impl DebugData {
 
         self.internal_find_line(addr, sql)
     }
-    fn internal_find_line(&mut self, addr: u16, sql: &str) -> Result<Option<SourceInfo>> {
+    fn internal_find_line(& self, addr: u16, sql: &str) -> Result<Option<SourceInfo>> {
         let mut stmt = self.conn.prepare_cached(sql)?;
         match stmt.query_row(params![addr], |row| {
             let file = row.get::<usize, i64>(0)?;
@@ -432,7 +432,7 @@ impl DebugData {
             }
         }
     }
-    pub fn get_file_line(&mut self, file: i64, line_no: i64) -> Result<Option<String>> {
+    pub fn get_file_line(& self, file: i64, line_no: i64) -> Result<Option<String>> {
         let sql = "select line from source_line where file = ?1 and line_no = ?2";
         let mut stmt = self.conn.prepare_cached(sql)?;
         match stmt.query_row(params![file, line_no], |row| {
@@ -446,17 +446,17 @@ impl DebugData {
             }
         }
     }
-    pub fn find_c_line(&mut self, addr: u16) -> Result<Option<SourceInfo>> {
+    pub fn find_c_line(& self, addr: u16) -> Result<Option<SourceInfo>> {
         let sql = "select * from
             (select file,line,seg,addr, (cline.addr+ segment.start) as absaddr
             from  cline, segment where segment.id = cline.seg order by absaddr desc)
             where absaddr <= ?1 limit 1";
-        let mut loc = self.internal_find_line(addr, sql)?;
-        if let Some(ref mut cline) = &mut loc {
+        let mut si = self.internal_find_line(addr, sql)?;
+        if let Some(ref mut cline) = &mut si {
             if let Some(l) = self.get_file_line(cline.file_id, cline.line_no)? {
                 cline.line = l;
             }
         }
-        Ok(loc)
+        Ok(si)
     }
 }
