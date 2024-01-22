@@ -160,9 +160,7 @@ absaddr integer
         left join file on line.file = file.id
         left join module on file.id = module.file
        
-",
-        [],
-    )?;
+",[],)?;
 
         self.conn.execute(
             "create view cline as 

@@ -12,15 +12,13 @@ use std::{
     fmt::Debug,
     fs::File,
     io::BufReader,
-    panic::Location,
     path::Path,
 };
 
 use crate::{
-    built_info::GIT_HEAD_REF,
     db::debugdb::{DebugData, SourceFile, SourceInfo},
     debugger::cpu::{Cpu, ShadowFlags},
-    debugger::execute::{BugType, StopReason},
+    debugger::execute::StopReason,
     debugger::loader,
     expr::DB65Context,
 };
@@ -47,6 +45,18 @@ pub struct CodeLocation {
     pub seg: u8,
     pub offset: u16,
     pub absaddr: u16,
+}
+pub enum SymbolType {
+    Unknown,
+    Equate,
+    Label,
+    CSymbol,
+}
+pub struct Symbol {
+    pub name: String,
+    pub value: u16,
+    pub module: String,
+    pub sym_type: SymbolType,
 }
 type InterceptFunc = fn(&mut Debugger, bool) -> Result<Option<StopReason>>;
 pub struct Debugger {
@@ -225,6 +235,9 @@ impl Debugger {
     pub fn get_addr_map(&self) -> &BTreeMap<u16, SourceInfo> {
         &self.source_info
     }
+    pub fn get_source(&self, file: i64, from: i64, to: i64) -> Result<Vec<String>> {
+        self.dbgdb.get_source(file, from, to)
+    }
     fn init_shadow(&self) -> Result<()> {
         let shadow = Cpu::get_shadow();
         for seg in self.seg_list.iter().filter(|s| s.name != "EXEHDR") {
@@ -299,7 +312,7 @@ impl Debugger {
     pub fn get_segments(&self) -> &Vec<Segment> {
         &self.seg_list
     }
-    pub fn get_dbg_symbols(&self, filter: Option<&String>) -> Result<Vec<(String, u16, String)>> {
+    pub fn get_dbg_symbols(&self, filter: Option<&String>) -> Result<Vec<Symbol>> {
         let s = self.dbgdb.get_symbols(filter)?;
         Ok(s)
     }
@@ -387,10 +400,31 @@ impl Debugger {
     }
 
     // converts a string representing an address into an address
-    // if string starts with '.' it is a symbol lookup
-    // if string starts with '$' it is a hex number
-    // else it is a decimal number
+    // if string contains ':' then its a source line
+    // if string starts with '$' or 0x it is a hex number
+    // if digits it is a decimal number
+    // else its a symbol
+
     pub fn convert_addr(&self, addr_str: &str) -> Result<(u16, String)> {
+        // source line?
+
+        if addr_str.contains(':') {
+            let mut parts = addr_str.split(':');
+            let file = parts.next().unwrap();
+            let line = parts.next().unwrap();
+            let file_info = self
+                .lookup_file_by_name(file)
+                .ok_or_else(|| anyhow::anyhow!("File '{}' not found", file))?;
+            let line_no = line.parse::<i64>()?;
+            if let Some(addr) = self
+                .dbgdb
+                .find_source_line_by_line_no(file_info.file_id, line_no)?
+            {
+                return Ok((addr.absaddr, addr_str.to_string()));
+            }
+            bail!("Source line not found");
+        }
+
         // is this a hex number?
         if let Some(hex) = addr_str.strip_prefix('$').or_else(|| {
             addr_str
@@ -405,12 +439,6 @@ impl Debugger {
             return Ok((addr_str.parse::<u16>()?, String::new()));
         }
 
-        // is it a symbol?
-        // if let Some(sym) = self.symbols.get(addr_str) {
-        //     return Ok((*sym, addr_str.to_string()));
-        // } else {
-        //     bail!("Symbol {} not found", addr_str);
-        // }
         let syms = self.dbgdb.get_symbol(addr_str)?;
         match syms.len() {
             0 => bail!("Symbol '{}' not found", addr_str),
@@ -591,7 +619,16 @@ impl Debugger {
 
         Ok(location)
     }
-    pub fn lookup_file(&self, file_id: i64) -> Option<&SourceFile> {
+    pub fn lookup_file_by_id(&self, file_id: i64) -> Option<&SourceFile> {
         self.file_table.get(&file_id)
+    }
+    pub fn lookup_file_by_name(&self, name: &str) -> Option<&SourceFile> {
+        self.file_table.iter().find_map(|(_id, file)| {
+            if file.short_name == name {
+                Some(file)
+            } else {
+                None
+            }
+        })
     }
 }

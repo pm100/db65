@@ -1,12 +1,10 @@
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, bail, Result};
-use evalexpr::Value;
+use anyhow::{bail, Result};
+
 
 use rusqlite::{
-    params,
-    types::{Null, Value as SqlValue},
-    Connection, ToSql,
+    types::{Value as SqlValue}, ToSql,
 };
 
 use super::debugdb::DebugData;

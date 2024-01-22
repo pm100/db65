@@ -1,10 +1,10 @@
 #![allow(clippy::uninlined_format_args)]
 use crate::debugger::cpu::Status;
-use crate::debugger::debugger::{Debugger, FrameType::*, WatchType};
+use crate::debugger::debugger::{CodeLocation, Debugger, FrameType::*, SymbolType, WatchType};
 use crate::debugger::execute::{BugType, StopReason};
 use crate::syntax;
 use anyhow::{anyhow, bail, Result};
-use clap::builder::Str;
+
 use clap::ArgMatches;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
@@ -17,6 +17,7 @@ pub struct Shell {
     debugger: Debugger,
     current_dis_addr: u16,
     _current_mem_addr: u16,
+    waw: Option<CodeLocation>,
 }
 
 impl Shell {
@@ -25,6 +26,7 @@ impl Shell {
             debugger: Debugger::new(),
             current_dis_addr: 0,
             _current_mem_addr: 0,
+            waw: None,
         }
     }
     pub fn shell(&mut self, file: Option<PathBuf>, _args: &[String]) -> Result<u8> {
@@ -152,8 +154,16 @@ impl Shell {
             Some(("list_symbols", args)) => {
                 let mtch = args.get_one::<String>("match");
                 let symbols = self.debugger.get_dbg_symbols(mtch)?;
-                for (sym, addr, module) in symbols {
-                    println!("0x{:04x} [{}.]{}", addr, module, sym);
+                for symbol in symbols {
+                    let symt = match symbol.sym_type {
+                        SymbolType::Equate => "equ",
+                        SymbolType::Label => "lab",
+                        _ => "???",
+                    };
+                    println!(
+                        "0x{:04x} [{}.]{} ({})",
+                        symbol.value, symbol.module, symbol.name, symt
+                    );
                 }
             }
             Some(("load_code", args)) => {
@@ -185,7 +195,7 @@ impl Shell {
                     .unwrap_or_default();
 
                 let reason = self.debugger.run(cmd_args)?;
-                self.stop(reason);
+                self.stop(reason)?;
             }
 
             Some(("go", _)) => {
@@ -193,7 +203,7 @@ impl Shell {
                     bail!("program not running");
                 };
                 let reason = self.debugger.go()?;
-                self.stop(reason);
+                self.stop(reason)?;
             }
 
             Some(("next", _)) => {
@@ -201,7 +211,7 @@ impl Shell {
                     bail!("program not running");
                 };
                 let reason = self.debugger.next()?;
-                self.stop(reason);
+                self.stop(reason)?;
             }
 
             Some(("step", _)) => {
@@ -209,7 +219,7 @@ impl Shell {
                     bail!("program not running");
                 };
                 let reason = self.debugger.step()?;
-                self.stop(reason);
+                self.stop(reason)?;
             }
 
             Some(("delete_breakpoint", args)) => {
@@ -225,7 +235,7 @@ impl Shell {
                         Jsr((addr, ret, _sp, _)) => {
                             let waw = self.debugger.where_are_we(ret)?;
                             if let Some(cf) = waw.cfile {
-                                let file_name = self.debugger.lookup_file(cf).unwrap();
+                                let file_name = self.debugger.lookup_file_by_id(cf).unwrap();
                                 println!(
                                     "{}:{}\t\t{}",
                                     file_name.short_name,
@@ -233,13 +243,14 @@ impl Shell {
                                     waw.ctext.unwrap()
                                 );
                             } else {
-                                println!("0x{:04x}", addr);
+                                // println!("0x{:04x}", addr);
+
+                                println!(
+                                    "jsr {:<10} x{:04x}",
+                                    self.debugger.symbol_lookup(addr)?,
+                                    ret
+                                );
                             }
-                            println!(
-                                "jsr {:<10} x{:04x}",
-                                self.debugger.symbol_lookup(addr)?,
-                                ret
-                            );
                         }
                         Pha(ac) => println!("pha x{:02x}", ac),
                         Php(sr) => println!("php x{:02x}", sr),
@@ -327,7 +338,7 @@ impl Shell {
                     bail!("program not running");
                 };
                 let reason = self.debugger.finish()?;
-                self.stop(reason);
+                self.stop(reason)?;
             }
             Some(("reg", args)) => {
                 let regname = args.get_one::<String>("register").unwrap();
@@ -360,16 +371,51 @@ impl Shell {
                     bail!("program not running");
                 };
                 let reason = self.debugger.next_statement()?;
-                self.stop(reason);
+                self.stop(reason)?;
             }
             Some(("step_statement", _)) => {
                 if !self.debugger.run_done {
                     bail!("program not running");
                 };
                 let reason = self.debugger.step_statement()?;
-                self.stop(reason);
+                self.stop(reason)?;
             }
-            Some(("list_source", _)) => {}
+            Some(("list_source", args)) => {
+                let addr = args.get_one::<String>("address");
+                if let Some(add) = addr {
+                    let (filename, start) = if add.contains(':') {
+                        let mut parts = add.split(':');
+                        let file = parts.next().unwrap();
+                        let line = parts.next().unwrap();
+                        let start = line.parse::<i64>().unwrap();
+                        (file, start)
+                    } else {
+                        (add.as_str(), 1)
+                    };
+                    let fileid = self
+                        .debugger
+                        .lookup_file_by_name(filename)
+                        .ok_or(anyhow!("Unknown source file {}", filename))?;
+
+                    let source = self
+                        .debugger
+                        .get_source(fileid.file_id, start, start + 10)?;
+                    for (i, s) in source.iter().enumerate() {
+                        println!("{}:{}\t\t{}", filename, i + start as usize, s);
+                    }
+                } else {
+                    let (fileid, from) = if let Some(waw) = &self.waw {
+                        (waw.cfile.unwrap_or(-1), waw.cline)
+                    } else {
+                        (-1, 0)
+                    };
+                    let source = self.debugger.get_source(fileid, from, from + 10)?;
+                    let file_name = self.debugger.lookup_file_by_id(fileid).unwrap();
+                    for (i, s) in source.iter().enumerate() {
+                        println!("{}:{}\t\t{}", file_name.short_name, i + from as usize, s);
+                    }
+                }
+            }
             Some((name, _matches)) => unimplemented!("{name}"),
             None => unreachable!("subcommand required"),
         }
@@ -475,7 +521,7 @@ impl Shell {
 
         // now display where we are
         let inst_addr = self.debugger.read_pc();
-        let waw = self.debugger.where_are_we(inst_addr)?;
+        self.waw = Some(self.debugger.where_are_we(inst_addr)?);
         //    println!("0x{:04x} {:?}", inst_addr, waw);
 
         // let module = if let Some(&ref m) = self.debugger.find_module(inst_addr) {
@@ -487,14 +533,18 @@ impl Shell {
         //     println!("{}:{}    {}", module, source_info.line_no, source_info.line);
         // }
         //println!("{}:", module);
-        if let Some(cf) = waw.cfile {
-            let file_name = self.debugger.lookup_file(cf).unwrap();
-            println!(
-                "{}:{}\t\t{}",
-                file_name.short_name,
-                waw.cline,
-                waw.ctext.unwrap()
-            );
+        if let Some(waw) = &self.waw {
+            if let Some(cf) = waw.cfile {
+                let file_name = self.debugger.lookup_file_by_id(cf).unwrap();
+                println!(
+                    "{}:{}\t\t{}",
+                    file_name.short_name,
+                    waw.cline,
+                    waw.ctext.as_ref().unwrap()
+                );
+            } else {
+                println!("0x{:04x}", inst_addr);
+            }
         } else {
             // disassemble the current instruction
 

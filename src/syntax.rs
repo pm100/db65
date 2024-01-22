@@ -204,6 +204,7 @@ pub fn syntax() -> Command {
         .subcommand(
             Command::new("list_source")
                 .alias("lc")
+                .arg(arg!([address] "address to list from"))
                 .about("list source")
                 .help_template(APPLET_TEMPLATE),
         )

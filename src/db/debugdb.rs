@@ -2,11 +2,11 @@ use anyhow::{anyhow, bail, Result};
 use evalexpr::Value;
 //pub const NO_PARAMS:  = [];
 use crate::db::util::Extract;
-use crate::debugger::debugger::{SegChunk, Segment};
+use crate::debugger::debugger::{SegChunk, Segment, Symbol, SymbolType};
 use rusqlite::{
     params,
     types::{Null, Value as SqlValue},
-    Connection, ToSql,
+    Connection,
 };
 use std::{
     collections::{BTreeMap, HashMap},
@@ -24,13 +24,6 @@ pub struct SourceInfo {
     pub absaddr: u16,
 }
 #[derive(Debug)]
-pub struct AddrSourcexx {
-    pub file_id: i64,
-    pub line_no: i64,
-    pub seg: u8,
-    pub addr: u16,
-    pub absaddr: u16,
-}
 
 pub struct SourceFile {
     pub file_id: i64,
@@ -57,20 +50,29 @@ impl DebugData {
         Ok(ret)
     }
 
-    pub fn get_symbols(&self, filter: Option<&String>) -> Result<Vec<(String, u16, String)>> {
+    pub fn get_symbols(&self, filter: Option<&String>) -> Result<Vec<Symbol>> {
         let mut v = Vec::new();
         let mut stmt = self
             .conn
-            .prepare_cached("select name, val , module from symbol")?;
+            .prepare_cached("select name, val , module, type from symbol")?;
         let rows = stmt.query_map([], |row| {
             let name = row.get::<usize, String>(0)?;
             let val = row.get::<usize, i64>(1)? as u16;
             let module = row.get::<usize, Option<String>>(2)?;
+            let sym_type = match row.get::<usize, String>(3)?.as_str() {
+                "lab" => SymbolType::Label,
+                "equ" => SymbolType::Equate,
+                _ => {
+                    //  unreachable!("unknown symbol type");
+                    //  bail!("unknown symbol type");
+                    SymbolType::Unknown
+                } //SymbolType::Unknown,
+            };
 
-            Ok((name, val, module))
+            Ok((name, val, module, sym_type))
         })?;
         for row in rows {
-            let (name, val, module) = row?;
+            let (name, value, module, sym_type) = row?;
             if let Some(filter) = filter {
                 if !name.contains(filter) {
                     continue;
@@ -82,7 +84,12 @@ impl DebugData {
             } else {
                 String::new()
             };
-            v.push((name, val, module));
+            v.push(Symbol {
+                name,
+                value,
+                module,
+                sym_type,
+            });
         }
         Ok(v)
     }
@@ -258,11 +265,7 @@ impl DebugData {
         }
         Ok(())
     }
-    pub fn get_source_file_lines(
-        &self,
-        file: i64,
-        hash: &mut BTreeMap<i64, SourceInfo>,
-    ) -> Result<()> {
+    fn get_source_file_lines(&self, file: i64, hash: &mut BTreeMap<i64, SourceInfo>) -> Result<()> {
         let mut stmt = self.conn.prepare_cached(
             "select line,seg,addr, (cline.addr+ segment.start) as absaddr
              from  cline, segment   where cline.file = ?1 and cline.seg = segment.id",
@@ -287,8 +290,18 @@ impl DebugData {
         }
         Ok(())
     }
+    pub fn get_source(&self, file: i64, from: i64, to: i64) -> Result<Vec<String>> {
+        let sql =
+    "select line  from source_line where file = ?1 and line_no >= ?2 and line_no <= ?3 order by line_no";
+        let rows = self.query_db(params![file, from, to], sql)?;
+        let r = rows
+            .iter()
+            .map(|row| row[0].vto_string().unwrap())
+            .collect();
+        Ok(r)
+    }
 
-    pub fn get_source_file_lines2(
+    fn get_source_file_lines2(
         &self,
         file: i64,
         hash: &mut BTreeMap<u16, SourceInfo>,
@@ -317,7 +330,37 @@ impl DebugData {
         }
         Ok(())
     }
-
+    pub fn find_source_line_by_line_no(
+        &self,
+        file: i64,
+        line_no: i64,
+    ) -> Result<Option<SourceInfo>> {
+        let sql = "select * from (select * from source_line where file=?1  and absaddr not null order by line_no asc) where line_no
+        >= ?2 limit 1;";
+        let mut stmt = self.conn.prepare_cached(sql)?;
+        match stmt.query_row(params![file, line_no], |row| {
+            let file = row.get::<usize, i64>(1)?;
+            let line = row.get::<usize, String>(2)?;
+            let line_no = row.get::<usize, i64>(3)?;
+            let seg = row.get::<usize, i64>(4)?;
+            let addr = row.get::<usize, u16>(5)?;
+            let absaddr = row.get::<usize, u16>(6)?;
+            Ok(SourceInfo {
+                line,
+                line_no,
+                file_id: file,
+                seg: seg as u8,
+                addr,
+                absaddr,
+            })
+        }) {
+            Ok(info) => Ok(Some(info)),
+            Err(e) => match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                _ => Err(e.into()),
+            },
+        }
+    }
     pub fn find_source_line(&self, addr: u16) -> Result<Option<SourceInfo>> {
         let sql =
             "select * from (select * from source_line order by absaddr desc) where absaddr <= ?1 limit 1";
@@ -339,10 +382,10 @@ impl DebugData {
             })
         }) {
             Ok(info) => Ok(Some(info)),
-            Err(e) => {
-                println!("{:?}", e);
-                Ok(None)
-            }
+            Err(e) => match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                _ => Err(e.into()),
+            },
         }
     }
     pub fn load_seg_list(&mut self, seg_list: &mut Vec<Segment>) -> Result<()> {
@@ -400,7 +443,7 @@ impl DebugData {
         }
         Ok(())
     }
-    pub fn find_assembly_line(& self, addr: u16) -> Result<Option<SourceInfo>> {
+    pub fn find_assembly_line(&self, addr: u16) -> Result<Option<SourceInfo>> {
         let sql = "select * from
             (select file,line,seg,addr, (aline.addr+ segment.start) as absaddr
             from  aline, segment where segment.id = aline.seg order by absaddr desc)
@@ -408,7 +451,7 @@ impl DebugData {
 
         self.internal_find_line(addr, sql)
     }
-    fn internal_find_line(& self, addr: u16, sql: &str) -> Result<Option<SourceInfo>> {
+    fn internal_find_line(&self, addr: u16, sql: &str) -> Result<Option<SourceInfo>> {
         let mut stmt = self.conn.prepare_cached(sql)?;
         match stmt.query_row(params![addr], |row| {
             let file = row.get::<usize, i64>(0)?;
@@ -426,13 +469,13 @@ impl DebugData {
             })
         }) {
             Ok(info) => Ok(Some(info)),
-            Err(e) => {
-                println!("{:?}", e);
-                Ok(None)
-            }
+            Err(e) => match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                _ => Err(e.into()),
+            },
         }
     }
-    pub fn get_file_line(& self, file: i64, line_no: i64) -> Result<Option<String>> {
+    pub fn get_file_line(&self, file: i64, line_no: i64) -> Result<Option<String>> {
         let sql = "select line from source_line where file = ?1 and line_no = ?2";
         let mut stmt = self.conn.prepare_cached(sql)?;
         match stmt.query_row(params![file, line_no], |row| {
@@ -440,13 +483,13 @@ impl DebugData {
             Ok(line)
         }) {
             Ok(info) => Ok(Some(info)),
-            Err(e) => {
-                println!("{:?}", e);
-                Ok(None)
-            }
+            Err(e) => match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                _ => Err(e.into()),
+            },
         }
     }
-    pub fn find_c_line(& self, addr: u16) -> Result<Option<SourceInfo>> {
+    pub fn find_c_line(&self, addr: u16) -> Result<Option<SourceInfo>> {
         let sql = "select * from
             (select file,line,seg,addr, (cline.addr+ segment.start) as absaddr
             from  cline, segment where segment.id = cline.seg order by absaddr desc)

@@ -1,5 +1,5 @@
 use crate::{debugger::cpu::Cpu, debugger::debugger::Debugger, trace};
-use anyhow::{anyhow, bail, Result};
+use anyhow::{bail, Result};
 type InterceptFunc = fn(&mut Debugger, bool) -> Result<Option<StopReason>>;
 use super::{
     cpu::ShadowFlags,
