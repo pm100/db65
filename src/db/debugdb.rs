@@ -110,6 +110,7 @@ impl DebugData {
             let (name, val, _module) = row?;
             sym_tab.insert(name, Value::Int(val as i64));
         }
+
         Ok(())
     }
 

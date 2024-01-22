@@ -6,6 +6,7 @@ the same functionality as the cli shell.
 */
 
 use anyhow::{bail, Result};
+use evalexpr::Value;
 
 use std::{
     collections::{BTreeMap, HashMap},
@@ -293,15 +294,23 @@ impl Debugger {
         let fd = File::open(file)?;
         let mut reader = BufReader::new(fd);
         self.dbgdb.parse(&mut reader)?;
-        self.dbgdb
-            .load_expr_symbols(&mut self.expr_context.symbols)?;
+
         self.dbgdb.load_seg_list(&mut self.seg_list)?;
         self.dbgdb.load_all_cfiles()?;
         self.source_info.clear();
         self.dbgdb.load_all_source_files(&mut self.source_info)?;
+        self.dbgdb
+            .load_expr_symbols(&mut self.expr_context.symbols)?;
+
         self.load_intercepts()?;
         self.init_shadow()?;
         self.dbgdb.load_files(&mut self.file_table)?;
+        for (x, si) in self.source_info.iter() {
+            if let Some(name) = self.lookup_file_by_id(si.file_id) {
+                let str = format!("{}:{}", name.short_name, si.line_no);
+                self.expr_context.symbols.insert(str, Value::Int(*x as i64));
+            }
+        }
         Ok(())
     }
     pub fn load_source(&mut self, file: &Path) -> Result<()> {

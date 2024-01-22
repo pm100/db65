@@ -410,7 +410,10 @@ impl Shell {
                         (-1, 0)
                     };
                     let source = self.debugger.get_source(fileid, from, from + 10)?;
-                    let file_name = self.debugger.lookup_file_by_id(fileid).unwrap();
+                    let file_name = self
+                        .debugger
+                        .lookup_file_by_id(fileid)
+                        .ok_or_else(|| anyhow!("no source"))?;
                     for (i, s) in source.iter().enumerate() {
                         println!("{}:{}\t\t{}", file_name.short_name, i + from as usize, s);
                     }
