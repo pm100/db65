@@ -16,6 +16,7 @@ impl DebugData {
             seg integer,
              size integer,
              parent integer
+          
         
 
      )",
@@ -111,8 +112,8 @@ id integer primary key,
     type integer,
     size integer,
     parent integer,
-    sym integer,
-    span integer         
+    sym integer
+     
 )",
             [],
         )?;
@@ -159,6 +160,7 @@ absaddr integer
         left join line on  symdef.def = line.id
         left join file on line.file = file.id
         left join module on file.id = module.file
+    
        
 ",[],)?;
 

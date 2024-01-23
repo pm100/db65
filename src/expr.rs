@@ -14,11 +14,11 @@ the expr command evaluates an expression and prints the result
 so you can do
 
 dis =pc
-mem =xr+0x20
-mem .ptr // no need for expression, symbols just work anyway
-mem =@(.ptr) // deference a pointer
-mem '=@(.ptr + 0x20)' // do math on a pointer
-mem =@(.ptr + (0x20*xr)) // more math
+mem =.xr+0x20
+mem ptr // no need for expression, symbols just work anyway
+mem =@(ptr) // deference a pointer
+mem '=@(ptr + 0x20)' // do math on a pointer
+mem =@(ptr + (0x20*xr)) // more math
 
 
 

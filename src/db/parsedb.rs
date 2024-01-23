@@ -239,8 +239,8 @@ impl DebugData {
                     scount += 1;
                     tx.execute(
                         "insert into scope 
-                            (id, name, module, type, size, parent, sym, span) 
-                            values (?1,?2,?3,?4,?5,?6,?7,?8)",
+                            (id, name, module, type, size, parent, sym) 
+                            values (?1,?2,?3,?4,?5,?6,?7)",
                         params![
                             scope.id,
                             scope.name,
@@ -249,13 +249,21 @@ impl DebugData {
                             scope.size,
                             scope.parent,
                             scope.sym,
-                            if !scope.span.is_empty() {
-                                scope.span[0]
-                            } else {
-                                -1
-                            }
+                            // if !scope.span.is_empty() {
+                            //     scope.span[0]
+                            // } else {
+                            //     -1
+                            // }
                         ],
                     )?;
+                    for span in scope.span {
+                        tx.execute(
+                            "
+                              insert into span (id, scope) values(?1, ?2)
+                              on conflict(id) do update set scope = ?2",
+                            params![span, scope.id],
+                        )?;
+                    }
                 }
                 "sym\tid" => {
                     let sym = Self::parse_sym(record)?;
@@ -316,13 +324,14 @@ impl DebugData {
         let duration = end.duration_since(start).unwrap();
         println!("it took {} milli seconds", duration.as_millis());
         tx.commit()?;
-        //self.merge_csymbols(symcount)?;
+        self.merge_csymbols(symcount)?;
         Ok(())
     }
     fn merge_csymbols(&mut self, mut symcount: i64) -> Result<()> {
         let sql = "select * from csymbol";
         let rows = self.query_db(params![], sql)?;
-        let tx = self.conn.transaction()?;
+        let mut statics = Vec::new();
+
         for row in rows {
             let id = row[0].vto_i64()?;
             let name = row[1].vto_string()?;
@@ -349,15 +358,35 @@ impl DebugData {
                     //    seg integer,
                     //     size integer,
                     //     parent integer,
-                    symcount += 1;
-                    let sql = "insert into symdef (id,name, scope, def, type, exp, val, seg, size, parent, addrsize) values (?1,?2,?3,?4,?5,?6,?7,?8,?9, ?10,?11)";
-                    tx.execute(
-                        sql,
-                        params![symcount, name, scope, sym, type_, 0, 0, 0, 0, 0, "static"],
-                    )?;
+                    // symcount += 1;
+                    // let sql = "insert into symdef (id,name, scope, def, type, exp, val, seg, size, parent, addrsize) values (?1,?2,?3,?4,?5,?6,?7,?8,?9, ?10,?11)";
+                    // tx.execute(
+                    //     sql,
+                    //     params![symcount, name, scope, sym, type_, 0, 0, 0, 0, 0, "static"],
+                    // )?;
+                    let row = self
+                        .conn
+                        .prepare_cached("select val,size,def from symdef where id = ?1")?
+                        .query_row(params![sym], |row| {
+                            Ok((
+                                row.get::<usize, i64>(0)?,
+                                row.get::<usize, i64>(1)?,
+                                row.get::<usize, i64>(2)?,
+                            ))
+                        })?;
+                    statics.push((row.0, row.1, row.2, name, scope, type_));
                 }
                 _ => bail!("bad sc: {}", sc),
             }
+        }
+        let tx = self.conn.transaction()?;
+        for st in statics {
+            symcount += 1;
+            let sql = "insert into symdef (id,name, scope, def, type, exp, val, seg, size, parent, addrsize) values (?1,?2,?3,?4,?5,?6,?7,?8,?9, ?10,?11)";
+            tx.execute(
+                sql,
+                params![symcount, st.3, st.4, st.2, st.5, 0, st.0, 0, st.1, 0, "static"],
+            )?;
         }
         tx.commit()?;
         Ok(())

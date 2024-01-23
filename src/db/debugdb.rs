@@ -2,7 +2,7 @@ use anyhow::{anyhow, bail, Result};
 use evalexpr::Value;
 //pub const NO_PARAMS:  = [];
 use crate::db::util::Extract;
-use crate::debugger::debugger::{SegChunk, Segment, Symbol, SymbolType};
+use crate::debugger::debugger::{HLSym, SegChunk, Segment, Symbol, SymbolType};
 use rusqlite::{
     params,
     types::{Null, Value as SqlValue},
@@ -502,5 +502,47 @@ impl DebugData {
             }
         }
         Ok(si)
+    }
+
+    pub fn find_scope(&self, seg: i64, addr: u16) -> Result<Option<i64>> {
+        let sql = "select span.scope from span  where span.scope not null and span.seg=?1 and span.start <= ?2 and span.start + span.size > ?2";
+        let mut stmt = self.conn.prepare_cached(sql)?;
+        match stmt.query_row(params![seg, addr], |row| {
+            let id = row.get::<usize, i64>(0)?;
+            Ok(id)
+        }) {
+            Ok(id) => Ok(Some(id)),
+            Err(e) => match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                _ => Err(e.into()),
+            },
+        }
+    }
+    pub fn find_csym(&self, name: &str, scope: i64) -> Result<Option<HLSym>> {
+        let sql = "select scope, sc,sym,offset from csymbol  where csymbol.scope =?1 and name = ?2";
+        let mut stmt = self.conn.prepare_cached(sql)?;
+        match stmt.query_row(params![scope, name], |row| {
+            // type integer,
+            // sc text,
+            // sym integer,
+            // offset integer
+            let scope = row.get::<usize, i64>(0)?;
+            let sc = row.get::<usize, String>(1)?;
+            let sym = row.get::<usize, i64>(2)?;
+            let offset = row.get::<usize, i64>(3)?;
+            Ok(HLSym {
+                name: name.to_string(),
+                type_: sc,
+                scope,
+                seg: 0,
+                value: offset,
+            })
+        }) {
+            Ok(id) => Ok(Some(id)),
+            Err(e) => match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(None),
+                _ => Err(e.into()),
+            },
+        }
     }
 }

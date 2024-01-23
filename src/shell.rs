@@ -160,6 +160,7 @@ impl Shell {
                     let symt = match symbol.sym_type {
                         SymbolType::Equate => "equ",
                         SymbolType::Label => "lab",
+                        SymbolType::CSymbol => "c",
                         _ => "???",
                     };
                     println!(
@@ -292,6 +293,7 @@ impl Shell {
             }
             Some(("print", args)) => {
                 let addr_str = args.get_one::<String>("address").unwrap();
+
                 let addr_str = self.expand_expr(addr_str)?;
                 let (addr, _) = self.debugger.convert_addr(&addr_str)?;
                 self.print(addr, args)?;
@@ -543,10 +545,11 @@ impl Shell {
         if let Some(cf) = self.waw.cfile {
             let file_name = self.debugger.lookup_file_by_id(cf).unwrap();
             println!(
-                "{}:{}\t\t{}",
+                "{}:{}\t\t{} {}",
                 file_name.short_name,
                 self.waw.cline,
-                self.waw.ctext.as_ref().unwrap()
+                self.waw.ctext.as_ref().unwrap(),
+                self.waw.scope.unwrap_or(0)
             );
         } else {
             // disassemble the current instruction

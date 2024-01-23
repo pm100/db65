@@ -30,6 +30,13 @@ pub enum SourceDebugMode {
     Step,
 }
 
+pub struct HLSym {
+    pub name: String,
+    pub value: i64,
+    pub type_: String,
+    pub seg: u8,
+    pub scope: i64,
+}
 pub enum DebugMode {
     Unknown,
     Source,
@@ -46,6 +53,7 @@ pub struct CodeLocation {
     pub seg: u8,
     pub offset: u16,
     pub absaddr: u16,
+    pub scope: Option<i64>,
 }
 pub enum SymbolType {
     Unknown,
@@ -458,7 +466,9 @@ impl Debugger {
         if addr_str.chars().next().unwrap().is_ascii_digit() {
             return Ok((addr_str.parse::<u16>()?, String::new()));
         }
-
+        if let Some(caddr) = self.find_csym_address(addr_str)? {
+            return Ok((caddr, addr_str.to_string()));
+        }
         let syms = self.dbgdb.get_symbol(addr_str)?;
         match syms.len() {
             0 => bail!("Symbol '{}' not found", addr_str),
@@ -555,7 +565,9 @@ impl Debugger {
         }
         Some(&seg.modules[current_mod])
     }
-
+    pub fn find_csym(&self, name: &str, scope: i64) -> Result<Option<HLSym>> {
+        self.dbgdb.find_csym(name, scope)
+    }
     pub fn where_are_we(&self, addr: u16) -> Result<CodeLocation> {
         let mut location = CodeLocation {
             module: None,
@@ -567,6 +579,7 @@ impl Debugger {
             seg: 0,
             offset: 0,
             absaddr: addr,
+            scope: None,
         };
         // do we have any debug data at all?
         if self.seg_list.is_empty() {
@@ -606,6 +619,9 @@ impl Debugger {
         location.seg = seg.id;
         location.module = Some(seg.modules[current_mod].module);
 
+        // find scope
+        location.scope = self.dbgdb.find_scope(seg.id as i64, rel_addr)?;
+
         // now find the assembly line
         if let Some(aline) = self.dbgdb.find_assembly_line(addr)? {
             location.aline = aline.line_no;
@@ -644,5 +660,41 @@ impl Debugger {
                 None
             }
         })
+    }
+    pub fn find_csym_address(&self, name: &str) -> Result<Option<u16>> {
+        let addr = self.read_pc();
+        let waw = self.where_are_we(addr)?;
+        if let Some(scope) = waw.scope {
+            if let Some(csym) = self.dbgdb.find_csym(name, scope)? {
+                match csym.type_.as_str() {
+                    "auto" => {
+                        //let stack = self.debugger.read_stack();
+                        let mut sp65 = 0;
+                        for i in (0..self.stack_frames.len()).rev() {
+                            if let FrameType::Jsr(jsr) = &self.stack_frames[i].frame_type {
+                                sp65 = jsr.sp65;
+                                if i == 0 {
+                                    // the call main stack frame is out by 4 (argc,argv)
+                                    sp65 -= 4;
+                                }
+                                break;
+                            }
+                        }
+                        return Ok(Some((sp65 as i64 + csym.value) as u16));
+                    }
+                    "reg" => {
+                        let regbank = self.dbgdb.get_symbol("zeropage.regbank")?;
+                        if regbank.len() == 1 {
+                            return Ok(Some((regbank[0].1 as i64 + csym.value) as u16));
+                        }
+                    }
+                    "static" => {}
+                    _ => {
+                        return Ok(None);
+                    }
+                }
+            };
+        }
+        Ok(None)
     }
 }
