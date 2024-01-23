@@ -35,7 +35,7 @@ pub enum DebugMode {
     Source,
     Assembler,
 }
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct CodeLocation {
     pub module: Option<i32>,
     pub cfile: Option<i64>,
@@ -113,8 +113,15 @@ pub enum SegmentType {
     // OverWrite = 5,
 }
 #[derive(Debug)]
+pub struct JsrData {
+    pub addr: u16,
+    pub return_addr: u16,
+    pub sp: u8,
+    pub sp65: u16,
+}
+#[derive(Debug)]
 pub(crate) enum FrameType {
-    Jsr((u16, u16, u8, u16)), // addr, return addr,sp,sp65
+    Jsr(JsrData), // addr, return addr,sp,sp65
     Pha(u8),
     Php(u8),
 }
@@ -246,31 +253,24 @@ impl Debugger {
             const RO: u8 = SegmentType::ReadOnly as u8;
             const ZP: u8 = SegmentType::Zp as u8;
             const CODE: u8 = SegmentType::Code as u8;
-            print!(
-                "{} {} {:04x}-{:04x} {}",
-                seg.id, seg.name, seg.start, seg.size, seg.seg_type
-            );
+
             match seg.seg_type {
                 RW => {
-                    println!("rw");
                     for i in seg.start..(seg.start + seg.size) {
                         shadow[i as usize] |= ShadowFlags::READ | ShadowFlags::WRITE;
                     }
                 }
                 RO => {
-                    println!("ro");
                     for i in seg.start..(seg.start + seg.size) {
                         shadow[i as usize] |= ShadowFlags::READ;
                     }
                 }
                 ZP => {
-                    println!("zp");
                     for i in seg.start..(seg.start + seg.size) {
                         shadow[i as usize] |= ShadowFlags::READ | ShadowFlags::WRITE;
                     }
                 }
                 CODE => {
-                    println!("code");
                     for i in seg.start..(seg.start + seg.size) {
                         shadow[i as usize] |= ShadowFlags::EXECUTE | ShadowFlags::READ;
                     }
@@ -332,6 +332,17 @@ impl Debugger {
         let arg0 = file.file_name().unwrap().to_str().unwrap().to_string();
         self.load_name = arg0;
         self.loader_start = run;
+
+        if let Some(prefix) = file.file_stem() {
+            let prefix = prefix.to_str().unwrap();
+            let mut path = file.to_path_buf();
+            path.pop();
+            path.push(format!("{}.dbg", prefix));
+            println!("Loading debug info from {:?}", path);
+            if path.exists() {
+                self.load_dbg(&path)?;
+            }
+        }
 
         Ok((size, run))
     }
@@ -460,12 +471,6 @@ impl Debugger {
     // tried to find a symbol matching an address
     // if not found it returns a numberic string
     pub fn symbol_lookup(&self, addr: u16) -> Result<String> {
-        // for (name, sym_addr) in &self.symbols {
-        //     if *sym_addr == addr {
-        //         return name.to_string();
-        //     }
-        // }
-
         if let Some(sym) = self.dbgdb.find_symbol(addr)? {
             return Ok(sym);
         }

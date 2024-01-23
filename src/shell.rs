@@ -1,6 +1,8 @@
 #![allow(clippy::uninlined_format_args)]
 use crate::debugger::cpu::Status;
-use crate::debugger::debugger::{CodeLocation, Debugger, FrameType::*, SymbolType, WatchType};
+use crate::debugger::debugger::{
+    CodeLocation, Debugger, FrameType::*, JsrData, SymbolType, WatchType,
+};
 use crate::debugger::execute::{BugType, StopReason};
 use crate::syntax;
 use anyhow::{anyhow, bail, Result};
@@ -17,7 +19,7 @@ pub struct Shell {
     debugger: Debugger,
     current_dis_addr: u16,
     _current_mem_addr: u16,
-    waw: Option<CodeLocation>,
+    waw: CodeLocation,
 }
 
 impl Shell {
@@ -26,7 +28,7 @@ impl Shell {
             debugger: Debugger::new(),
             current_dis_addr: 0,
             _current_mem_addr: 0,
-            waw: None,
+            waw: CodeLocation::default(),
         }
     }
     pub fn shell(&mut self, file: Option<PathBuf>, _args: &[String]) -> Result<u8> {
@@ -231,9 +233,9 @@ impl Shell {
                 let stack = self.debugger.read_stack();
                 for i in (0..stack.len()).rev() {
                     let frame = &stack[i];
-                    match frame.frame_type {
-                        Jsr((addr, ret, _sp, _)) => {
-                            let waw = self.debugger.where_are_we(ret)?;
+                    match &frame.frame_type {
+                        Jsr(jd) => {
+                            let waw = self.debugger.where_are_we(jd.return_addr)?;
                             if let Some(cf) = waw.cfile {
                                 let file_name = self.debugger.lookup_file_by_id(cf).unwrap();
                                 println!(
@@ -246,9 +248,10 @@ impl Shell {
                                 // println!("0x{:04x}", addr);
 
                                 println!(
-                                    "jsr {:<10} x{:04x}",
-                                    self.debugger.symbol_lookup(addr)?,
-                                    ret
+                                    "jsr {:<10} x{:04x} 0x{:04x}",
+                                    self.debugger.symbol_lookup(jd.addr)?,
+                                    jd.return_addr,
+                                    jd.sp65
                                 );
                             }
                         }
@@ -404,8 +407,8 @@ impl Shell {
                         println!("{}:{}\t\t{}", filename, i + start as usize, s);
                     }
                 } else {
-                    let (fileid, from) = if let Some(waw) = &self.waw {
-                        (waw.cfile.unwrap_or(-1), waw.cline)
+                    let (fileid, from) = if let Some(cf) = &self.waw.cfile {
+                        (*cf, self.waw.cline)
                     } else {
                         (-1, 0)
                     };
@@ -524,7 +527,7 @@ impl Shell {
 
         // now display where we are
         let inst_addr = self.debugger.read_pc();
-        self.waw = Some(self.debugger.where_are_we(inst_addr)?);
+        self.waw = self.debugger.where_are_we(inst_addr)?;
         //    println!("0x{:04x} {:?}", inst_addr, waw);
 
         // let module = if let Some(&ref m) = self.debugger.find_module(inst_addr) {
@@ -536,18 +539,15 @@ impl Shell {
         //     println!("{}:{}    {}", module, source_info.line_no, source_info.line);
         // }
         //println!("{}:", module);
-        if let Some(waw) = &self.waw {
-            if let Some(cf) = waw.cfile {
-                let file_name = self.debugger.lookup_file_by_id(cf).unwrap();
-                println!(
-                    "{}:{}\t\t{}",
-                    file_name.short_name,
-                    waw.cline,
-                    waw.ctext.as_ref().unwrap()
-                );
-            } else {
-                println!("0x{:04x}", inst_addr);
-            }
+
+        if let Some(cf) = self.waw.cfile {
+            let file_name = self.debugger.lookup_file_by_id(cf).unwrap();
+            println!(
+                "{}:{}\t\t{}",
+                file_name.short_name,
+                self.waw.cline,
+                self.waw.ctext.as_ref().unwrap()
+            );
         } else {
             // disassemble the current instruction
 

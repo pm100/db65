@@ -161,7 +161,7 @@ impl DebugData {
                     loaded: false,
                 };
                 file_table.insert(id, sf);
-                println!("found file {}", p.display());
+                // println!("found file {}", p.display());
             } else {
                 println!("can't find file {}", name);
             }

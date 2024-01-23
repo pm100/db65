@@ -32,6 +32,8 @@ use crate::{
     debugger::debugger::{Debugger, FrameType, SourceDebugMode, StackFrame, WatchType},
 };
 use anyhow::anyhow;
+
+use super::debugger::JsrData;
 impl Debugger {
     pub fn execute(&mut self, mut count: u16) -> Result<StopReason> {
         let counting = count > 0;
@@ -57,8 +59,15 @@ impl Debugger {
                     let sp = Cpu::read_sp();
 
                     let addr = lo as u16 | ((hi as u16) << 8);
+                    let sp65_addr = Cpu::get_sp65_addr();
+                    let sp65 = Cpu::read_word(sp65_addr as u16);
                     self.stack_frames.push(StackFrame {
-                        frame_type: FrameType::Jsr((addr, pc + 3, sp, 0)),
+                        frame_type: FrameType::Jsr(JsrData {
+                            addr,
+                            return_addr: pc + 3,
+                            sp,
+                            sp65,
+                        }),
                         stop_on_pop: false,
                     });
                     if let Some(intercept) = self.call_intercepts.get(&addr) {
@@ -78,14 +87,14 @@ impl Debugger {
                             deferred_stop = Some(StopReason::Finish);
                         }
 
-                        if let FrameType::Jsr((addr, _ret_addr, fsp, _)) = frame.frame_type {
+                        if let FrameType::Jsr(jd) = frame.frame_type {
                             if self.enable_stack_check {
                                 let sp = Cpu::read_sp();
-                                if sp + 2 != fsp {
+                                if sp + 2 != jd.sp {
                                     break StopReason::Bug(BugType::SpMismatch);
                                 }
                             }
-                            if let Some(intercept) = self.call_intercepts.get(&addr) {
+                            if let Some(intercept) = self.call_intercepts.get(&jd.addr) {
                                 if let Some(stop) = intercept(self, true)? {
                                     break 'main_loop stop;
                                 }
@@ -103,7 +112,7 @@ impl Debugger {
                     // pla
                     if let Some(fr) = self.stack_frames.pop() {
                         // ok - but it should be a push frame
-                        if let FrameType::Jsr((_, _, _, _)) = fr.frame_type {
+                        if let FrameType::Jsr(_jd) = fr.frame_type {
                             if self.enable_stack_check {
                                 // note - longjmp hits this becuase it manually
                                 // pops a return address off the stack using pla,pla
@@ -127,7 +136,7 @@ impl Debugger {
                     // plp
                     if let Some(fr) = self.stack_frames.pop() {
                         // ok - but it should be a push frame
-                        if let FrameType::Jsr((_, _, _, _)) = fr.frame_type {
+                        if let FrameType::Jsr(_jd) = fr.frame_type {
                             break StopReason::Bug(BugType::SpMismatch);
                         }
                     } else if self.enable_stack_check {

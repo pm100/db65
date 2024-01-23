@@ -3,14 +3,14 @@ use anyhow::{anyhow, bail, Result};
 
 type StringRecord = Vec<String>;
 //pub const NO_PARAMS:  = [];
+use crate::db::util::Extract;
+use crate::{db::debugdb::DebugData, debugger::debugger::SegmentType};
 use rusqlite::params;
 use std::{
     fs::File,
     io::{BufRead, BufReader},
     time::SystemTime,
 };
-
-use crate::{db::debugdb::DebugData, debugger::debugger::SegmentType};
 
 #[derive(Debug)]
 pub struct CsymRecord {
@@ -303,6 +303,7 @@ impl DebugData {
                 _ => {} //println!("other"),
             };
         }
+
         println!("csyms: {}", ccount);
         println!("files: {}", fcount);
         println!("lines: {}", lcount);
@@ -315,7 +316,50 @@ impl DebugData {
         let duration = end.duration_since(start).unwrap();
         println!("it took {} milli seconds", duration.as_millis());
         tx.commit()?;
+        //self.merge_csymbols(symcount)?;
+        Ok(())
+    }
+    fn merge_csymbols(&mut self, mut symcount: i64) -> Result<()> {
+        let sql = "select * from csymbol";
+        let rows = self.query_db(params![], sql)?;
+        let tx = self.conn.transaction()?;
+        for row in rows {
+            let id = row[0].vto_i64()?;
+            let name = row[1].vto_string()?;
+            let scope = row[2].vto_i64()?;
+            let type_ = row[3].vto_i64()?;
+            let sc = row[4].vto_string()?;
+            let sym = row[5].vto_i64()?;
+            let offset = row[6].vto_i64()?;
 
+            match sc.as_str() {
+                "ext" => {}
+                "auto" => {}
+                "reg" => {}
+                "static" => {
+                    // insert static as aliases for their assembly name
+                    // id integer primary key,
+                    // name text not null ,
+                    // addrsize text,
+                    //    scope integer,
+                    //    def integer,
+                    //    type text,
+                    //    exp integer,
+                    //    val integer,
+                    //    seg integer,
+                    //     size integer,
+                    //     parent integer,
+                    symcount += 1;
+                    let sql = "insert into symdef (id,name, scope, def, type, exp, val, seg, size, parent, addrsize) values (?1,?2,?3,?4,?5,?6,?7,?8,?9, ?10,?11)";
+                    tx.execute(
+                        sql,
+                        params![symcount, name, scope, sym, type_, 0, 0, 0, 0, 0, "static"],
+                    )?;
+                }
+                _ => bail!("bad sc: {}", sc),
+            }
+        }
+        tx.commit()?;
         Ok(())
     }
 
