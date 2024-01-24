@@ -49,7 +49,18 @@ impl DebugData {
         ret.create_tables()?;
         Ok(ret)
     }
-
+    fn convert_symbol_type(s: &str) -> SymbolType {
+        match s {
+            "lab" => SymbolType::Label,
+            "equ" => SymbolType::Equate,
+            "c" => SymbolType::CSymbol,
+            _ => {
+                //  unreachable!("unknown symbol type");
+                //  bail!("unknown symbol type");
+                SymbolType::Unknown
+            } //SymbolType::Unknown,
+        }
+    }
     pub fn get_symbols(&self, filter: Option<&String>) -> Result<Vec<Symbol>> {
         let mut v = Vec::new();
         let mut stmt = self
@@ -59,15 +70,7 @@ impl DebugData {
             let name = row.get::<usize, String>(0)?;
             let val = row.get::<usize, i64>(1)? as u16;
             let module = row.get::<usize, Option<String>>(2)?;
-            let sym_type = match row.get::<usize, String>(3)?.as_str() {
-                "lab" => SymbolType::Label,
-                "equ" => SymbolType::Equate,
-                _ => {
-                    //  unreachable!("unknown symbol type");
-                    //  bail!("unknown symbol type");
-                    SymbolType::Unknown
-                } //SymbolType::Unknown,
-            };
+            let sym_type = Self::convert_symbol_type(row.get::<usize, String>(3)?.as_str());
 
             Ok((name, val, module, sym_type))
         })?;
@@ -132,9 +135,14 @@ impl DebugData {
         let rows = stmt.query_map([name], |row| {
             let name = row.get::<usize, String>(0)?;
             let val = row.get::<usize, i64>(1)? as u16;
-            let mut module = row.get::<usize, String>(2)?;
-            module = module.strip_suffix(".o").unwrap_or(&module).to_string();
-            Ok((name, val, module))
+            let module = row.get::<usize, Option<String>>(2)?;
+            let m = if let Some(m) = module {
+                m.strip_suffix(".o").unwrap_or(&m).to_string()
+            } else {
+                String::new()
+            };
+
+            Ok((name, val, m))
         })?;
         for row in rows {
             let (name, val, m) = row?;
@@ -169,18 +177,28 @@ impl DebugData {
         Ok(())
     }
 
-    pub fn find_symbol(&self, addr: u16) -> Result<Option<String>> {
+    pub fn find_symbol_by_addr(&self, addr: u16) -> Result<Vec<Symbol>> {
         let ans = self.query_db(
             params![addr],
-            "select symdef.name from symdef where symdef.val = ?1 and seg not null",
+            "select name, scope,type,val,seg from symdef where symdef.val = ?1 and seg not null",
         )?;
-
+        let mut v = Vec::new();
         for row in ans {
-            if let SqlValue::Text(s) = &row[0] {
-                return Ok(Some(s.to_string()));
-            }
+            let name = row[0].vto_string()?;
+            // let addr = row[1].vto_i64()?;
+            //  let module = row[2].vto_string()?;
+            let scope = row[1].vto_i64()?;
+            let type_ = row[2].vto_string()?;
+            let val = row[3].vto_i64()? as u16;
+            let seg = row[4].vto_i64()? as u8;
+            v.push(Symbol {
+                name,
+                value: val,
+                module: String::new(),
+                sym_type: Self::convert_symbol_type(&type_),
+            });
         }
-        Ok(None)
+        Ok(v)
     }
 
     pub fn load_all_cfiles(&mut self) -> Result<()> {

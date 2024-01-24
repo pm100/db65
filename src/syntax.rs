@@ -23,8 +23,87 @@ pub fn syntax() -> Command {
         .subcommand_help_heading("Commands")
         .help_template(PARSER_TEMPLATE)
         .subcommand(
+            Command::new("load_code")
+                .alias("load")
+                .about("Load binary file")
+                .arg(Arg::new("file").required(true))
+                .arg_required_else_help(true)
+                .help_template(APPLET_TEMPLATE)
+                .after_help(
+                    "loads binary file into memory. 
+ If there is a dbginfo file (.dbg), it will also load that,
+ removing the need for load_dbginfo command",
+                ),
+        )
+        .subcommand(
+            Command::new("load_dbginfo")
+                .alias("dbg")
+                .about("Load dbginfo file")
+                .arg(Arg::new("file").required(true))
+                .arg_required_else_help(true)
+                .help_template(APPLET_TEMPLATE),
+        )
+        // .subcommand(
+        //     Command::new("load_source")
+        //         .alias("xx")
+        //         .about("Load binary file")
+        //         .arg(Arg::new("file").required(true))
+        //         .arg_required_else_help(true)
+        //         .help_template(APPLET_TEMPLATE),
+        // )
+        .subcommand(
+            Command::new("run")
+                .about("Run code")
+                .arg(Arg::new("address"))
+                .arg(Arg::new("args").last(true).num_args(0..))
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("list_source")
+                .alias("lsc")
+                .arg(arg!([address] "address to list from"))
+                .about("list source")
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("quit")
+                .aliases(["exit", "q"])
+                .about("Quit db65")
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("next_instruction")
+                .alias("ni")
+                .about("Next instruction (step over)")
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("step_instruction")
+                .alias("si")
+                .about("Next instruction (step into)")
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("next_statement")
+                .alias("ns")
+                .about("next statement")
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("step_statement")
+                .alias("ss")
+                .about("step statement")
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("go")
+                .alias("g")
+                .about("Resume execution")
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
             Command::new("break")
-                .about("Set break points")
+                .about("Set break point")
                 .alias("b")
                 .arg(Arg::new("address").required(true))
                 .help_template(APPLET_TEMPLATE),
@@ -39,46 +118,15 @@ pub fn syntax() -> Command {
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
-            Command::new("list_bp")
+            Command::new("list_breakpoints")
                 .about("List break points")
-                .alias("bl")
+                .alias("lbp")
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
-            Command::new("list_wp")
+            Command::new("list_watchpoints")
                 .about("List watch points")
-                .alias("wl")
-                .help_template(APPLET_TEMPLATE),
-        )
-        .subcommand(
-            Command::new("symbols")
-                .alias("ll")
-                .about("Load symbol file")
-                .arg(Arg::new("file").required(true))
-                .arg_required_else_help(true)
-                .help_template(APPLET_TEMPLATE),
-        )
-        .subcommand(
-            Command::new("load_code")
-                .alias("load")
-                .about("Load binary file")
-                .arg(Arg::new("file").required(true))
-                .arg_required_else_help(true)
-                .help_template(APPLET_TEMPLATE),
-        )
-        .subcommand(
-            Command::new("load_source")
-                .alias("xx")
-                .about("Load binary file")
-                .arg(Arg::new("file").required(true))
-                .arg_required_else_help(true)
-                .help_template(APPLET_TEMPLATE),
-        )
-        .subcommand(
-            Command::new("run")
-                .about("Run code")
-                .arg(Arg::new("address"))
-                .arg(Arg::new("args").last(true).num_args(0..))
+                .alias("lwp")
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
@@ -88,31 +136,7 @@ pub fn syntax() -> Command {
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
-            Command::new("quit")
-                .aliases(["exit", "q"])
-                .about("Quit db65")
-                .help_template(APPLET_TEMPLATE),
-        )
-        .subcommand(
-            Command::new("next")
-                .alias("n")
-                .about("Next instruction (step over)")
-                .help_template(APPLET_TEMPLATE),
-        )
-        .subcommand(
-            Command::new("go")
-                .alias("g")
-                .about("Resume execution")
-                .help_template(APPLET_TEMPLATE),
-        )
-        .subcommand(
-            Command::new("step")
-                .alias("s")
-                .about("Next instruction (step into)")
-                .help_template(APPLET_TEMPLATE),
-        )
-        .subcommand(
-            Command::new("memory")
+            Command::new("display_memory")
                 .aliases(["mem", "m"])
                 .about("Display memory")
                 .arg(Arg::new("address").required(true))
@@ -126,7 +150,7 @@ pub fn syntax() -> Command {
         )
         .subcommand(
             Command::new("delete_breakpoint")
-                .alias("bd")
+                .alias("dbp")
                 .arg(Arg::new("id").required(false))
                 .about("Delete breakpoint")
                 .help_template(APPLET_TEMPLATE),
@@ -146,18 +170,22 @@ pub fn syntax() -> Command {
         )
         .subcommand(
             Command::new("list_symbols")
-                .alias("ls")
+                .alias("lsy")
                 .arg(Arg::new("match").required(false))
                 .about("List symbols")
-                .help_template(APPLET_TEMPLATE),
+                .help_template(APPLET_TEMPLATE)
+                .long_about(
+                    "List symbols matching match. If match is omitted, all symbols are listed.
+Match is a substring, eg 'lsy main' will list all symbols containing 'main'",
+                ),
         )
         .subcommand(
-            Command::new("enable")
+            Command::new("enable_checks")
                 .alias("en")
                 .arg(arg!( -m --memcheck  "enable memory check"))
                 //.arg(arg!(  -t --memtrace  "enable memory trace"))
                 .arg(arg!(  -s --stackcheck  "enable stack check"))
-                .about("Enable features")
+                .about("Enable debug checks")
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
@@ -187,25 +215,6 @@ pub fn syntax() -> Command {
                 .arg(arg!(-s --segments  "display segments"))
                 .arg(arg!(-a --address_map  "display c source address map"))
                 .arg(arg!([arg] "arg"))
-                .help_template(APPLET_TEMPLATE),
-        )
-        .subcommand(
-            Command::new("next_statement")
-                .alias("ns")
-                .about("next statement")
-                .help_template(APPLET_TEMPLATE),
-        )
-        .subcommand(
-            Command::new("step_statement")
-                .alias("ss")
-                .about("step statement")
-                .help_template(APPLET_TEMPLATE),
-        )
-        .subcommand(
-            Command::new("list_source")
-                .alias("lc")
-                .arg(arg!([address] "address to list from"))
-                .about("list source")
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(

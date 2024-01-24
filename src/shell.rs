@@ -183,7 +183,7 @@ impl Shell {
                 return Ok(true);
             }
 
-            Some(("memory", args)) => {
+            Some(("display_memory", args)) => {
                 let addr_str = args.get_one::<String>("address").unwrap();
                 let addr_str = &self.expand_expr(addr_str)?;
                 let (addr, _) = self.debugger.convert_addr(addr_str)?;
@@ -298,7 +298,7 @@ impl Shell {
                 let (addr, _) = self.debugger.convert_addr(&addr_str)?;
                 self.print(addr, args)?;
             }
-            Some(("enable", args)) => {
+            Some(("enable_checks", args)) => {
                 self.debugger
                     .enable_mem_check(*args.get_one::<bool>("memcheck").unwrap());
                 self.debugger

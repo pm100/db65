@@ -346,24 +346,6 @@ impl DebugData {
                 "auto" => {}
                 "reg" => {}
                 "static" => {
-                    // insert static as aliases for their assembly name
-                    // id integer primary key,
-                    // name text not null ,
-                    // addrsize text,
-                    //    scope integer,
-                    //    def integer,
-                    //    type text,
-                    //    exp integer,
-                    //    val integer,
-                    //    seg integer,
-                    //     size integer,
-                    //     parent integer,
-                    // symcount += 1;
-                    // let sql = "insert into symdef (id,name, scope, def, type, exp, val, seg, size, parent, addrsize) values (?1,?2,?3,?4,?5,?6,?7,?8,?9, ?10,?11)";
-                    // tx.execute(
-                    //     sql,
-                    //     params![symcount, name, scope, sym, type_, 0, 0, 0, 0, 0, "static"],
-                    // )?;
                     let row = self
                         .conn
                         .prepare_cached("select val,size,def from symdef where id = ?1")?
@@ -385,7 +367,7 @@ impl DebugData {
             let sql = "insert into symdef (id,name, scope, def, type, exp, val, seg, size, parent, addrsize) values (?1,?2,?3,?4,?5,?6,?7,?8,?9, ?10,?11)";
             tx.execute(
                 sql,
-                params![symcount, st.3, st.4, st.2, st.5, 0, st.0, 0, st.1, 0, "static"],
+                params![symcount, st.3, st.4, st.2, "c", 0, st.0, 0, st.1, 0, "static"],
             )?;
         }
         tx.commit()?;

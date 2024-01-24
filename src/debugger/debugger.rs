@@ -55,6 +55,7 @@ pub struct CodeLocation {
     pub absaddr: u16,
     pub scope: Option<i64>,
 }
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub enum SymbolType {
     Unknown,
     Equate,
@@ -91,6 +92,8 @@ pub struct Debugger {
     pub(crate) privileged_mode: bool,
     pub(crate) debug_mode: DebugMode,
     pub(crate) file_table: HashMap<i64, SourceFile>,
+    pub(crate) regbank_addr: Option<u16>,
+    pub(crate) regbank_size: Option<u16>,
 }
 
 pub struct HeapBlock {
@@ -183,6 +186,8 @@ impl Debugger {
             privileged_mode: false,
             debug_mode: DebugMode::Unknown,
             file_table: HashMap::new(),
+            regbank_addr: None,
+            regbank_size: None,
         }
     }
     pub fn delete_breakpoint(&mut self, id_opt: Option<&String>) -> Result<()> {
@@ -313,12 +318,23 @@ impl Debugger {
         self.load_intercepts()?;
         self.init_shadow()?;
         self.dbgdb.load_files(&mut self.file_table)?;
+
+        // load file lines int expr db
         for (x, si) in self.source_info.iter() {
             if let Some(name) = self.lookup_file_by_id(si.file_id) {
                 let str = format!("{}:{}", name.short_name, si.line_no);
                 self.expr_context.symbols.insert(str, Value::Int(*x as i64));
             }
         }
+        let regbank = self.dbgdb.get_symbol("zeropage.regbank")?;
+        if regbank.len() != 0 {
+            self.regbank_addr = Some(regbank[0].1);
+        }
+        let regbanksize = self.dbgdb.get_symbol("regbanksize")?;
+        if regbanksize.len() != 0 {
+            self.regbank_size = Some(regbanksize[0].1);
+        }
+
         Ok(())
     }
     pub fn load_source(&mut self, file: &Path) -> Result<()> {
@@ -480,15 +496,25 @@ impl Debugger {
     // reverse of convert_addr.
     // tried to find a symbol matching an address
     // if not found it returns a numberic string
+    // prefernece is for a label
     pub fn symbol_lookup(&self, addr: u16) -> Result<String> {
-        if let Some(sym) = self.dbgdb.find_symbol(addr)? {
-            return Ok(sym);
+        let syms = self.dbgdb.find_symbol_by_addr(addr)?;
+        if let Some(sym) = syms.iter().find(|s| s.sym_type == SymbolType::Label) {
+            return Ok(sym.name.clone());
+        }
+        if syms.len() > 0 {
+            return Ok(syms[0].name.clone());
         }
         Ok(format!("${:04x}", addr))
     }
+    // same for zero page
     pub fn zp_symbol_lookup(&self, addr: u8) -> Result<String> {
-        if let Some(sym) = self.dbgdb.find_symbol(addr as u16)? {
-            return Ok(sym);
+        let syms = self.dbgdb.find_symbol_by_addr(addr as u16)?;
+        if let Some(sym) = syms.iter().find(|s| s.sym_type == SymbolType::Label) {
+            return Ok(sym.name.clone());
+        }
+        if syms.len() > 0 {
+            return Ok(syms[0].name.clone());
         }
 
         Ok(format!("${:02x}", addr))
@@ -683,9 +709,8 @@ impl Debugger {
                         return Ok(Some((sp65 as i64 + csym.value) as u16));
                     }
                     "reg" => {
-                        let regbank = self.dbgdb.get_symbol("zeropage.regbank")?;
-                        if regbank.len() == 1 {
-                            return Ok(Some((regbank[0].1 as i64 + csym.value) as u16));
+                        if let Some(regbank) = self.regbank_addr {
+                            return Ok(Some((regbank as i64 + csym.value) as u16));
                         }
                     }
                     "static" => {}

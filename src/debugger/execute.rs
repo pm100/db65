@@ -178,7 +178,17 @@ impl Debugger {
                 match Cpu::get_memcheck() {
                     MemCheck::None => {}
                     MemCheck::ReadNoWrite(addr) => {
-                        break 'main_loop StopReason::Bug(BugType::Memcheck(*addr));
+                        if let Some(regbank) = self.regbank_addr {
+                            if *addr >= regbank
+                                && *addr < (regbank + self.regbank_size.unwrap_or(6))
+                            {
+                                // OK
+                            } else {
+                                break 'main_loop StopReason::Bug(BugType::Memcheck(*addr));
+                            }
+                        } else {
+                            break 'main_loop StopReason::Bug(BugType::Memcheck(*addr));
+                        }
                     }
                     MemCheck::WriteNoPermission(addr) => {
                         break 'main_loop StopReason::Bug(BugType::SegCheck(*addr));
