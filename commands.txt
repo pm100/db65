@@ -1,4 +1,0 @@
-load filetest
-ll ll
-break ._main
-run
