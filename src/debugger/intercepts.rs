@@ -31,6 +31,11 @@ impl Debugger {
                     .insert(free[0].1, |d, f| d.free_intercept(f));
             };
         };
+        let realloc = self.dbgdb.get_symbol("realloc._realloc")?;
+        if realloc.len() == 1 {
+            self.call_intercepts
+                .insert(realloc[0].1, |d, f| d.realloc_intercept(f));
+        };
         Ok(())
     }
 
@@ -40,6 +45,9 @@ impl Debugger {
         - update of shadow memory for new heap blocks
         - check for double free / invalid free
         - check for leaks
+
+        THIS CODE HAS INTIMATE KNOWLEDGE OF THE HEAP IMPLEMENTATION IN CC65
+
     */
     fn malloc_intercept(&mut self, ret: bool) -> Result<Option<StopReason>> {
         if ret {
@@ -59,6 +67,7 @@ impl Debugger {
                 addr,
                 size: new_block.1,
                 alloc_addr: new_block.0,
+                realloc_size: None,
             };
             // delete the temporary 0 block
             self.heap_blocks.remove(&0);
@@ -78,6 +87,7 @@ impl Debugger {
                 addr: 0,
                 size,
                 alloc_addr: Cpu::read_pc(),
+                realloc_size: None,
             };
             trace!("malloc call {} @ {:04x}", size, hb.alloc_addr);
             self.heap_blocks.insert(0, hb);
@@ -114,9 +124,84 @@ impl Debugger {
 
         Ok(None)
     }
+    fn realloc_intercept(&mut self, ret: bool) -> Result<Option<StopReason>> {
+        if ret {
+            // return from realloc
+            // 3 cases
+            // - it returned null - original block still ok
+            // - it returned a new address - all work was done via malloc and free
+            // - it returned the same address - we need to extend the shadow
+            self.privileged_mode = false;
+            let addr = Self::ac_xr();
+            trace!("realloc ret {:04x}", addr);
+            if addr == 0 {
+                // realloc returned null
+                return Ok(None);
+            }
+            if let Some(hb) = self.heap_blocks.get_mut(&addr) {
+                if let Some(sz) = hb.realloc_size {
+                    // case 3 - same address
+                    let orig_size = hb.size;
+                    hb.size = sz;
+                    let shadow = Cpu::get_shadow();
+                    if sz < orig_size {
+                        // realloc to smaller size
+                        // update the shadow to show that this is free
+
+                        for i in addr + sz..addr + orig_size {
+                            shadow[i as usize] = ShadowFlags::empty();
+                        }
+                    } else {
+                        for i in addr + orig_size..addr + hb.size {
+                            shadow[i as usize] |= ShadowFlags::READ | ShadowFlags::WRITE;
+                        }
+                    }
+                } else {
+                    // case 2 - new address
+                    // all work was done via malloc and free
+                    // nothing to do
+                }
+            } else {
+                // realloc returned a new address but malloc didnt see it!
+                panic!("realloc returns non heap block");
+            };
+        } else {
+            let addr = Self::read_arg(0);
+            let size = Self::ac_xr();
+            if addr == 0 {
+                // realloc of null
+                // realloc will call malloc
+                return Ok(None);
+            }
+            if size == 0 {
+                // realloc to zero size
+                // realloc will call free
+                return Ok(None);
+            }
+            trace!("realloc call {} @ {:04x}", size, addr);
+            if let Some(hb) = self.heap_blocks.get_mut(&addr) {
+                hb.realloc_size = Some(size);
+            } else {
+                // not found -> realloc of non heap block
+                return Ok(Some(StopReason::Bug(BugType::HeapCheck)));
+            };
+
+            // realloc is privileged - it can write to unalloacted memory
+
+            self.privileged_mode = true;
+        };
+
+        Ok(None)
+    }
     fn ac_xr() -> u16 {
         let ac = Cpu::read_ac();
         let xr = Cpu::read_xr();
         (xr as u16) << 8 | (ac as u16)
+    }
+    fn read_arg(offset: u16) -> u16 {
+        let sp65_addr = Cpu::get_sp65_addr() as u16;
+        let sp65 = Cpu::read_word((sp65_addr + offset) as u16);
+        let val = Cpu::read_word(sp65);
+        val
     }
 }

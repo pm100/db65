@@ -103,6 +103,7 @@ pub struct HeapBlock {
     pub addr: u16,
     pub size: u16,
     pub alloc_addr: u16,
+    pub realloc_size: Option<u16>,
 }
 pub struct SegChunk {
     pub offset: u16,

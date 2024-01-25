@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 
 TODO list
 
-realloc
+
 assembler listing
 clean up expr handling
 realloc
@@ -38,12 +38,14 @@ load bin from command line
 stack write check
 write bugcheck for locals
 clean bt output
-nice load messages
+#nice load messages
 status command
 dedup symbols
 ctrlc
 delete watchpint!
-backtrace display on and off
+error backtrace display on and off
+bt should show current frame too
+
 */
 pub struct Shell {
     debugger: Debugger,
