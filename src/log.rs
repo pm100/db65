@@ -1,6 +1,6 @@
 use simplelog::*;
 //use std::fs::File;
-use std::{collections::LinkedList, fs::File};
+use std::{collections::LinkedList, fs::File, sync::Mutex};
 #[macro_export]
 macro_rules! trace {
     ($fmt:literal, $($arg:expr),*) => {
@@ -69,4 +69,15 @@ impl std::io::Write for MyLog {
         }
         Ok(())
     }
+}
+
+use once_cell::sync::{Lazy, OnceCell};
+
+static SAY_CB: OnceCell<fn(&str)> = OnceCell::new();
+
+pub fn set_say_cb(cb: fn(&str)) {
+    SAY_CB.set(cb).unwrap();
+}
+pub fn say(s: &str) {
+    SAY_CB.get().unwrap()(s);
 }

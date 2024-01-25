@@ -1,6 +1,9 @@
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_lossless)]
-use crate::{log::init_log, shell::Shell};
+use crate::{
+    log::{init_log, set_say_cb},
+    shell::Shell,
+};
 use anyhow::Result;
 use clap::Parser;
 use std::path::PathBuf;
@@ -22,8 +25,8 @@ mod debugger {
 }
 mod dis;
 
+mod about;
 mod expr;
-
 mod shell;
 mod syntax;
 
@@ -48,11 +51,13 @@ struct Cli {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     init_log();
+    set_say_cb(|s| println!("{}", s));
     println!(
         "db65 sim6502 debugger {} ({})",
         built_info::PKG_VERSION,
         built_info::GIT_COMMIT_HASH_SHORT.unwrap_or_default()
     );
+    println!("use 'help' to get help for commands and 'about' for more information");
     let mut sh = Shell::new();
     sh.shell(cli.command_file, &cli.args)?;
     Ok(())

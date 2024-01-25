@@ -24,7 +24,7 @@ pub fn syntax() -> Command {
         .help_template(PARSER_TEMPLATE)
         .subcommand(
             Command::new("load_code")
-                .alias("load")
+                .visible_alias("load")
                 .about("Load binary file")
                 .arg(Arg::new("file").required(true))
                 .arg_required_else_help(true)
@@ -37,7 +37,7 @@ pub fn syntax() -> Command {
         )
         .subcommand(
             Command::new("load_dbginfo")
-                .alias("dbg")
+                .visible_alias("dbg")
                 .about("Load dbginfo file")
                 .arg(Arg::new("file").required(true))
                 .arg_required_else_help(true)
@@ -60,58 +60,58 @@ pub fn syntax() -> Command {
         )
         .subcommand(
             Command::new("list_source")
-                .alias("lsc")
+                .visible_alias("lsc")
                 .arg(arg!([address] "address to list from"))
                 .about("list source")
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
             Command::new("quit")
-                .aliases(["exit", "q"])
+                .visible_aliases(["exit", "q"])
                 .about("Quit db65")
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
             Command::new("next_instruction")
-                .alias("ni")
+                .visible_alias("ni")
                 .about("Next instruction (step over)")
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
             Command::new("step_instruction")
-                .alias("si")
+                .visible_alias("si")
                 .about("Next instruction (step into)")
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
             Command::new("next_statement")
-                .alias("ns")
+                .visible_alias("ns")
                 .about("next statement")
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
             Command::new("step_statement")
-                .alias("ss")
+                .visible_alias("ss")
                 .about("step statement")
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
             Command::new("go")
-                .alias("g")
+                .visible_alias("g")
                 .about("Resume execution")
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
             Command::new("break")
                 .about("Set break point")
-                .alias("b")
+                .visible_alias("b")
                 .arg(Arg::new("address").required(true))
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
             Command::new("watch")
                 .about("Set watch points")
-                .alias("w")
+                .visible_alias("w")
                 .arg(Arg::new("address").required(true))
                 .arg(arg!(-r --read  "watch for read"))
                 .arg(arg!(-w --write  "watch for write"))
@@ -137,7 +137,7 @@ pub fn syntax() -> Command {
         )
         .subcommand(
             Command::new("display_memory")
-                .aliases(["mem", "m"])
+                .visible_aliases(["mem", "m"])
                 .about("Display memory")
                 .arg(Arg::new("address").required(true))
                 .help_template(APPLET_TEMPLATE),
@@ -150,14 +150,14 @@ pub fn syntax() -> Command {
         )
         .subcommand(
             Command::new("delete_breakpoint")
-                .alias("dbp")
+                .visible_alias("dbp")
                 .arg(Arg::new("id").required(false))
                 .about("Delete breakpoint")
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
             Command::new("print")
-                .alias("p")
+                .visible_alias("p")
                 .arg(arg!(<address>  "address of value to print"))
                 .arg(arg!(asint:     -i   "integer"))
                 .arg(arg!(aspointer: -p   "pointer"))
@@ -170,7 +170,7 @@ pub fn syntax() -> Command {
         )
         .subcommand(
             Command::new("list_symbols")
-                .alias("lsy")
+                .visible_alias("lsy")
                 .arg(Arg::new("match").required(false))
                 .about("List symbols")
                 .help_template(APPLET_TEMPLATE)
@@ -181,7 +181,7 @@ Match is a substring, eg 'lsy main' will list all symbols containing 'main'",
         )
         .subcommand(
             Command::new("enable_checks")
-                .alias("en")
+                .visible_alias("en")
                 .arg(arg!( -m --memcheck  "enable memory check"))
                 //.arg(arg!(  -t --memtrace  "enable memory trace"))
                 .arg(arg!(  -s --stackcheck  "enable stack check"))
@@ -190,7 +190,7 @@ Match is a substring, eg 'lsy main' will list all symbols containing 'main'",
         )
         .subcommand(
             Command::new("finish")
-                .alias("fin")
+                .visible_alias("fin")
                 .about("Run until current function returns")
                 .help_template(APPLET_TEMPLATE),
         )
@@ -203,7 +203,7 @@ Match is a substring, eg 'lsy main' will list all symbols containing 'main'",
         )
         .subcommand(
             Command::new("write_memory")
-                .alias("wm")
+                .visible_alias("wm")
                 .about("Write to memory")
                 .arg(arg!(<address> "address to write to"))
                 .arg(arg!(<value> "value, either integer or expression"))
@@ -221,31 +221,12 @@ Match is a substring, eg 'lsy main' will list all symbols containing 'main'",
             Command::new("expr")
                 .arg(arg!(<expression>  "expression to evaluate"))
                 .about("Evaluate address expression")
-                .help_template(APPLET_TEMPLATE)
-                .after_help(
-                    r#"
-Expressions can be used anywhere an address is required. Expr command
-can be used to test an expression and also to inspect values.
-
-Examples:
-expr =0x20          evaluates to 0x20 (redundant)
-expr =.xr           the xr register
-expr =.xr+1         the xr register plus 1
-dis =.pc-6          disassemble from pc-6
-m =.xr+0x20         display memory at xr+0x20
-m ptr               display memory at pointer (raw symbols just work anyway)
-m =@(ptr)           dereference a pointer
-m =@(ptr+0x20)      do math on a pointer
-m =@(p1+(2*.yr))    more math
-p -s =@(sreg)       print a string pointed to by sreg, sreg+1 
-
-@ is the dereference operator for a word 
-@b is the dereference operator for a byte 
-
-Note if there are spaces in the expression, you must quote it:
-mem '=@(ptr + 0x20)'
-                    
-                    "#,
-                ),
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("about")
+                .about("explanation of commands")
+                .arg(arg!([topic]))
+                .help_template(APPLET_TEMPLATE),
         )
 }

@@ -7,7 +7,8 @@ the same functionality as the cli shell.
 
 use anyhow::{bail, Result};
 use evalexpr::Value;
-
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::{
     collections::{BTreeMap, HashMap},
     fmt::Debug,
@@ -22,6 +23,7 @@ use crate::{
     debugger::execute::StopReason,
     debugger::loader,
     expr::DB65Context,
+    log::say,
 };
 
 pub enum SourceDebugMode {
@@ -94,6 +96,7 @@ pub struct Debugger {
     pub(crate) file_table: HashMap<i64, SourceFile>,
     pub(crate) regbank_addr: Option<u16>,
     pub(crate) regbank_size: Option<u16>,
+    pub(crate) ctrlc: Arc<AtomicBool>,
 }
 
 pub struct HeapBlock {
@@ -162,8 +165,7 @@ pub struct WatchPoint {
 }
 impl Debugger {
     pub fn new() -> Self {
-        Cpu::reset();
-        Self {
+        let s = Self {
             break_points: HashMap::new(),
             watch_points: HashMap::new(),
             source_info: BTreeMap::new(),
@@ -188,7 +190,14 @@ impl Debugger {
             file_table: HashMap::new(),
             regbank_addr: None,
             regbank_size: None,
-        }
+            ctrlc: Arc::new(AtomicBool::new(false)),
+        };
+        let ctrlc = s.ctrlc.clone();
+        ctrlc::set_handler(move || {
+            ctrlc.store(true, Ordering::SeqCst);
+        })
+        .expect("Error setting Ctrl-C handler");
+        s
     }
     pub fn delete_breakpoint(&mut self, id_opt: Option<&String>) -> Result<()> {
         if let Some(id) = id_opt {
@@ -289,7 +298,7 @@ impl Debugger {
                     }
                 }
                 _ => {
-                    println!("unknown segment type {}", seg.seg_type);
+                    bail!("unknown segment type {}", seg.seg_type);
                 }
             }
         }
@@ -362,7 +371,7 @@ impl Debugger {
             let mut path = file.to_path_buf();
             path.pop();
             path.push(format!("{}.dbg", prefix));
-            println!("Loading debug info from {:?}", path);
+            say(&format!("Loading debug info from {:?}", path));
             if path.exists() {
                 self.load_dbg(&path)?;
             }

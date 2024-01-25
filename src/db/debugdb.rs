@@ -3,6 +3,7 @@ use evalexpr::Value;
 //pub const NO_PARAMS:  = [];
 use crate::db::util::Extract;
 use crate::debugger::debugger::{HLSym, SegChunk, Segment, Symbol, SymbolType};
+use crate::log::say;
 use rusqlite::{
     params,
     types::{Null, Value as SqlValue},
@@ -171,7 +172,7 @@ impl DebugData {
                 file_table.insert(id, sf);
                 // println!("found file {}", p.display());
             } else {
-                println!("can't find file {}", name);
+                say(&format!("can't find file {}", name));
             }
         }
         Ok(())
@@ -457,7 +458,7 @@ impl DebugData {
                     size: size,
                 });
             } else {
-                println!("bad segid {}", segid);
+                bail!("bad segid {}", segid);
             }
         }
         Ok(())

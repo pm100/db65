@@ -4,6 +4,7 @@ use anyhow::{anyhow, bail, Result};
 type StringRecord = Vec<String>;
 //pub const NO_PARAMS:  = [];
 use crate::db::util::Extract;
+use crate::log::say;
 use crate::{db::debugdb::DebugData, debugger::debugger::SegmentType};
 use rusqlite::params;
 use std::{
@@ -120,8 +121,8 @@ impl DebugData {
             let record = Self::csv_parse(&line)?;
             let hdr = record.get(0).ok_or(anyhow!("bad file"))?;
             match Self::parse_eq(hdr)?.0.as_str() {
-                "version\tmajor" => println!("version"),
-                "info\tcsym" => println!("information"),
+                "version\tmajor" => {}
+                "info\tcsym" => {}
                 "csym\tid" => {
                     ccount += 1;
                     let csym = Self::parse_csym(&record)?;
@@ -148,7 +149,7 @@ impl DebugData {
                         params![file.id, file.name, file.size, file.mod_time],
                     )?;
                 }
-                "lib\tid" => println!("lib"),
+                "lib\tid" => {}
                 "line\tid" => {
                     let line = Self::parse_line(&record)?;
                     lcount += 1;
@@ -312,17 +313,12 @@ impl DebugData {
             };
         }
 
-        println!("csyms: {}", ccount);
-        println!("files: {}", fcount);
-        println!("lines: {}", lcount);
-        println!("modules: {}", mcount);
-        println!("segments: {}", segcount);
-        println!("spans: {}", spcount);
-        println!("scopes: {}", scount);
-        println!("symbols: {}", symcount);
+        say(&format!("files: {}", fcount));
+        say(&format!("modules: {}", mcount));
+        say(&format!("segments: {}", segcount));
+        say(&format!("symbols: {}", ccount + symcount));
         let end = SystemTime::now();
         let duration = end.duration_since(start).unwrap();
-        println!("it took {} milli seconds", duration.as_millis());
         tx.commit()?;
         self.merge_csymbols(symcount)?;
         Ok(())

@@ -33,7 +33,7 @@ static mut THECPU: Cpu = Cpu {
     exit_code: 0,
     memcheck: MemCheck::None,
     arg_array: Vec::new(),
-    memhits: [(false, 0); 6],
+    memhits: [(false, 0); 8],
     memhitcount: 0,
     paracall: false,
     tainted_ac: false,
@@ -58,7 +58,7 @@ pub struct Cpu {
     sp65_addr: u8,                // the location of the cc65 'stack' pointer
     memcheck: MemCheck,           // the address of the last memcheck failure
     arg_array: Vec<String>,       // the command line arguments
-    memhits: [(bool, u16); 6],    // used for data watches
+    memhits: [(bool, u16); 8],    // used for data watches
     memhitcount: u8,              // entry count in hit array for this instruction
     pub paracall: bool,           // we just did a pv call
     tainted_ac: bool,             // the ac is tainted
@@ -230,7 +230,7 @@ impl Cpu {
     pub fn get_memhitcount() -> u8 {
         unsafe { THECPU.memhitcount }
     }
-    pub fn get_memhits() -> [(bool, u16); 6] {
+    pub fn get_memhits() -> [(bool, u16); 8] {
         unsafe { THECPU.memhits }
     }
     pub fn get_arg_count() -> u8 {

@@ -1,4 +1,5 @@
 #![allow(clippy::uninlined_format_args)]
+use crate::about::About;
 use crate::debugger::cpu::Status;
 use crate::debugger::debugger::{
     CodeLocation, Debugger, FrameType::*, JsrData, SymbolType, WatchType,
@@ -7,6 +8,7 @@ use crate::debugger::execute::{BugType, StopReason};
 use crate::syntax;
 use anyhow::{anyhow, bail, Result};
 
+//use clap::error::ErrorKind;
 use clap::ArgMatches;
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
@@ -15,11 +17,40 @@ use std::fs::File;
 use std::io::{ErrorKind, Read};
 use std::path::{Path, PathBuf};
 
+/*
+
+TODO list
+
+realloc
+assembler listing
+clean up expr handling
+realloc
+options
+ - dis len
+  - mem len
+  - force asm
+  - .dbg alternative
+65c02 support
+trace command
+log / trace in code
+dbiginfo for module
+load bin from command line
+stack write check
+write bugcheck for locals
+clean bt output
+nice load messages
+status command
+dedup symbols
+ctrlc
+delete watchpint!
+backtrace display on and off
+*/
 pub struct Shell {
     debugger: Debugger,
     current_dis_addr: u16,
     _current_mem_addr: u16,
     waw: CodeLocation,
+    about: About,
 }
 
 impl Shell {
@@ -29,6 +60,7 @@ impl Shell {
             current_dis_addr: 0,
             _current_mem_addr: 0,
             waw: CodeLocation::default(),
+            about: About::new(),
         }
     }
     pub fn shell(&mut self, file: Option<PathBuf>, _args: &[String]) -> Result<u8> {
@@ -36,7 +68,7 @@ impl Shell {
 
         if let Err(e) = rl.load_history("history.txt") {
             if let ReadlineError::Io(ref re) = e {
-                if re.kind() != ErrorKind::NotFound {
+                if re.kind() != std::io::ErrorKind::NotFound {
                     println!("cannot open history {:?}", e);
                 }
             } else {
@@ -84,9 +116,16 @@ impl Shell {
                         lastinput = line.clone();
                     };
                     match self.dispatch(&line) {
-                        Err(e) => println!("{} {}", e, e.backtrace()), // display error
-                        Ok(true) => break,                             // quit was typed
-                        Ok(false) => {}                                // continue
+                        Err(e) => {
+                            if let Some(original_error) = e.downcast_ref::<clap::error::Error>() {
+                                println!("{}", original_error);
+                            } else {
+                                println!("{} {}", e, e.backtrace());
+                            }
+                        }
+
+                        Ok(true) => break, // quit was typed
+                        Ok(false) => {}    // continue
                     }
                 }
                 Err(ReadlineError::Interrupted) => {
@@ -135,21 +174,21 @@ impl Shell {
                 };
                 self.debugger.set_watch(addr, rw)?;
             }
-            Some(("list_bp", _)) => {
+            Some(("list_breakpoints", _)) => {
                 let blist = self.debugger.get_breaks();
                 for bp_addr in &blist {
                     let bp = self.debugger.get_bp(*bp_addr).unwrap();
                     println!("#{} 0x{:04X} ({})", bp.number, bp.addr, bp.symbol);
                 }
             }
-            Some(("list_wp", _)) => {
+            Some(("list_watchpoints", _)) => {
                 let wlist = self.debugger.get_watches();
                 for wp_addr in &wlist {
                     let wp = self.debugger.get_watch(*wp_addr).unwrap();
                     println!("#{} 0x{:04X} ({})", wp.number, wp.addr, wp.symbol);
                 }
             }
-            Some(("symbols", args)) => {
+            Some(("load_symbols", args)) => {
                 let file = args.get_one::<String>("file").unwrap();
                 self.debugger.load_dbg(Path::new(file))?;
             }
@@ -209,7 +248,7 @@ impl Shell {
                 self.stop(reason)?;
             }
 
-            Some(("next", _)) => {
+            Some(("next_instruction", _)) => {
                 if !self.debugger.run_done {
                     bail!("program not running");
                 };
@@ -217,7 +256,7 @@ impl Shell {
                 self.stop(reason)?;
             }
 
-            Some(("step", _)) => {
+            Some(("step_instruction", _)) => {
                 if !self.debugger.run_done {
                     bail!("program not running");
                 };
@@ -424,6 +463,14 @@ impl Shell {
                     }
                 }
             }
+            Some(("about", args)) => {
+                let topic = args.get_one::<String>("topic");
+                if let Some(t) = topic {
+                    println!("{}", self.about.get_topic(t.as_str()));
+                } else {
+                    println!("{}", self.about.get_topic("topics"));
+                }
+            }
             Some((name, _matches)) => unimplemented!("{name}"),
             None => unreachable!("subcommand required"),
         }
@@ -524,32 +571,25 @@ impl Shell {
                 let wp = self.debugger.get_watch(addr).unwrap();
                 println!("Watch #{} 0x{:04x} ({}) ", wp.number, wp.addr, wp.symbol);
             }
-            StopReason::Finish => {}
+            StopReason::Finish => {
+                println!("Finish");
+            }
+            StopReason::Ctrlc => {
+                println!("Ctrl-c break");
+            }
         }
 
         // now display where we are
         let inst_addr = self.debugger.read_pc();
         self.waw = self.debugger.where_are_we(inst_addr)?;
-        //    println!("0x{:04x} {:?}", inst_addr, waw);
-
-        // let module = if let Some(&ref m) = self.debugger.find_module(inst_addr) {
-        //     m.module_name.clone()
-        // } else {
-        //     String::new()
-        // };
-        // if let Some(cline) = self.debugger.find_source_line(inst_addr).unwrap() {
-        //     println!("{}:{}    {}", module, source_info.line_no, source_info.line);
-        // }
-        //println!("{}:", module);
 
         if let Some(cf) = self.waw.cfile {
             let file_name = self.debugger.lookup_file_by_id(cf).unwrap();
             println!(
-                "{}:{}\t\t{} {}",
+                "{}:{}\t\t{}",
                 file_name.short_name,
                 self.waw.cline,
-                self.waw.ctext.as_ref().unwrap(),
-                self.waw.scope.unwrap_or(0)
+                self.waw.ctext.as_ref().unwrap()
             );
         } else {
             // disassemble the current instruction

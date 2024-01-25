@@ -19,6 +19,7 @@ pub enum StopReason {
     Next,
     Bug(BugType),
     Finish,
+    Ctrlc,
 }
 #[derive(Debug, Clone)]
 pub enum BugType {
@@ -40,7 +41,11 @@ impl Debugger {
 
         let reason = 'main_loop: loop {
             let pc = Cpu::read_pc();
-
+            if self.ctrlc.load(std::sync::atomic::Ordering::Relaxed) {
+                self.ctrlc
+                    .store(false, std::sync::atomic::Ordering::Relaxed);
+                break 'main_loop StopReason::Ctrlc;
+            }
             /*==============================================================
                             Stack tracking code
             if we hit a jsr, we push the return address and the stack pointer
@@ -178,6 +183,7 @@ impl Debugger {
                 match Cpu::get_memcheck() {
                     MemCheck::None => {}
                     MemCheck::ReadNoWrite(addr) => {
+                        // register save area is regulary read before write
                         if let Some(regbank) = self.regbank_addr {
                             if *addr >= regbank
                                 && *addr < (regbank + self.regbank_size.unwrap_or(6))
