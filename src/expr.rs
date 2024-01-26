@@ -27,50 +27,31 @@ mem =@(ptr + (0x20*xr)) // more math
 use crate::{debugger::cpu::Cpu, debugger::debugger::Debugger};
 use anyhow::{anyhow, Result};
 use evalexpr::{eval_int_with_context, Context, EvalexprResult, Value};
-use std::{collections::HashMap, ops::RangeInclusive};
+use std::ops::RangeInclusive;
 
-pub struct DB65Context {
-    pub symbols: HashMap<String, Value>,
-    ac: Value,
-    xr: Value,
-    yr: Value,
-    sp: Value,
-    sr: Value,
-    pc: Value,
-}
-
-impl DB65Context {
-    pub fn new() -> Self {
-        Self {
-            symbols: HashMap::new(),
-            ac: Value::Int(0),
-            xr: Value::Int(0),
-            yr: Value::Int(0),
-            sp: Value::Int(0),
-            sr: Value::Int(0),
-            pc: Value::Int(0),
-        }
-    }
-    pub fn reload(&mut self) {
-        self.ac = Value::Int(Cpu::read_ac() as i64);
-        self.xr = Value::Int(Cpu::read_xr() as i64);
-        self.yr = Value::Int(Cpu::read_yr() as i64);
-        self.sp = Value::Int(Cpu::read_sp() as i64);
-        self.sr = Value::Int(Cpu::read_sr() as i64);
-        self.pc = Value::Int(Cpu::read_pc() as i64);
-    }
-}
-impl Context for DB65Context {
+impl Context for Debugger {
     fn get_value(&self, key: &str) -> Option<&Value> {
-        match key {
-            ".ac" => Some(&self.ac),
-            ".xr" => Some(&self.xr),
-            ".yr" => Some(&self.yr),
-            ".sp" => Some(&self.sp),
-            ".pc" => Some(&self.pc),
-            ".sr" => Some(&self.sr),
-            _ => self.symbols.get(key),
-        }
+        let val = match key {
+            ".ac" => self.read_ac() as i64,
+            ".xr" => self.read_xr() as i64,
+            ".yr" => self.read_yr() as i64,
+            ".sp" => self.read_sp() as i64,
+            ".pc" => self.read_pc() as i64,
+            ".sr" => self.read_sr() as i64,
+            _ => {
+                let sym = self.convert_addr(key).ok();
+                if let Some(s) = sym {
+                    s.0 as i64
+                } else {
+                    return None;
+                }
+            }
+        };
+        // horrible hack because we have to return
+        // a calculated value refernce from a read only context
+        self.expr_value.replace(Value::Int(val));
+        let p = self.expr_value.as_ptr();
+        Some(unsafe { &*p })
     }
     fn call_function(&self, key: &str, arg: &Value) -> EvalexprResult<Value> {
         match key {
@@ -113,9 +94,7 @@ impl Context for DB65Context {
 }
 impl Debugger {
     pub fn evaluate(&mut self, expr: &str) -> Result<u16> {
-        // reload register values
-        self.expr_context.reload();
-        eval_int_with_context(expr, &self.expr_context)
+        eval_int_with_context(expr, self)
             .map_err(|e| anyhow!(e))
             .map(|v| v as u16)
     }

@@ -2,7 +2,7 @@
 use crate::about::About;
 use crate::debugger::cpu::Status;
 use crate::debugger::debugger::{
-    CodeLocation, Debugger, FrameType::*, JsrData, SymbolType, WatchType,
+    BreakPoint, CodeLocation, Debugger, FrameType::*, JsrData, SymbolType, WatchPoint, WatchType,
 };
 use crate::debugger::execute::{BugType, StopReason};
 use crate::syntax;
@@ -10,13 +10,13 @@ use anyhow::{anyhow, bail, Result};
 
 //use clap::error::ErrorKind;
 use clap::ArgMatches;
+
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::{ErrorKind, Read};
 use std::path::{Path, PathBuf};
-
 /*
 
 TODO list
@@ -24,7 +24,7 @@ TODO list
 
 assembler listing
 clean up expr handling
-realloc
+set cc65 root
 options
  - dis len
   - mem len
@@ -38,13 +38,13 @@ load bin from command line
 stack write check
 write bugcheck for locals
 clean bt output
-#nice load messages
+
 status command
 dedup symbols
-ctrlc
-delete watchpint!
+
 error backtrace display on and off
 bt should show current frame too
+
 
 */
 pub struct Shell {
@@ -54,7 +54,7 @@ pub struct Shell {
     waw: CodeLocation,
     about: About,
 }
-
+static SHELL_HISTORY_FILE: &str = ".db65_history";
 impl Shell {
     pub fn new() -> Self {
         Self {
@@ -68,7 +68,7 @@ impl Shell {
     pub fn shell(&mut self, file: Option<PathBuf>, _args: &[String]) -> Result<u8> {
         let mut rl = DefaultEditor::new()?;
 
-        if let Err(e) = rl.load_history("history.txt") {
+        if let Err(e) = rl.load_history(SHELL_HISTORY_FILE) {
             if let ReadlineError::Io(ref re) = e {
                 if re.kind() != std::io::ErrorKind::NotFound {
                     println!("cannot open history {:?}", e);
@@ -144,7 +144,7 @@ impl Shell {
             }
         }
 
-        let _ = rl.save_history("history.txt");
+        let _ = rl.save_history(SHELL_HISTORY_FILE);
         Ok(0)
     }
 
@@ -177,17 +177,23 @@ impl Shell {
                 self.debugger.set_watch(addr, rw)?;
             }
             Some(("list_breakpoints", _)) => {
-                let blist = self.debugger.get_breaks();
-                for bp_addr in &blist {
-                    let bp = self.debugger.get_bp(*bp_addr).unwrap();
-                    println!("#{} 0x{:04X} ({})", bp.number, bp.addr, bp.symbol);
+                let blist = self.debugger.get_breaks()?;
+
+                for (i, bp) in blist.values().enumerate() {
+                    println!("#{} 0x{:04X} ({})", i + 1, bp.addr, bp.symbol);
                 }
             }
             Some(("list_watchpoints", _)) => {
-                let wlist = self.debugger.get_watches();
-                for wp_addr in &wlist {
-                    let wp = self.debugger.get_watch(*wp_addr).unwrap();
-                    println!("#{} 0x{:04X} ({})", wp.number, wp.addr, wp.symbol);
+                let wlist = self.debugger.get_watches()?;
+
+                for (i, wp) in wlist.values().enumerate() {
+                    println!(
+                        "#{} 0x{:04X} ({}) {:?}",
+                        i + 1,
+                        wp.addr,
+                        wp.symbol,
+                        wp.watch
+                    );
                 }
             }
             Some(("load_symbols", args)) => {
@@ -214,11 +220,10 @@ impl Shell {
                 let file = args.get_one::<String>("file").unwrap();
                 self.debugger.load_code(Path::new(file))?;
             }
-            Some(("load_source", args)) => {
-                let file = args.get_one::<String>("file").unwrap();
-                self.debugger.load_source(Path::new(file))?;
-            }
-
+            // Some(("load_source", args)) => {
+            //     let file = args.get_one::<String>("file").unwrap();
+            //     self.debugger.load_source(Path::new(file))?;
+            // }
             Some(("quit", _)) => {
                 println!("quit");
                 return Ok(true);
@@ -270,7 +275,10 @@ impl Shell {
                 let id = args.get_one::<String>("id");
                 self.debugger.delete_breakpoint(id)?;
             }
-
+            Some(("delete_watchpoint", args)) => {
+                let id = args.get_one::<String>("id");
+                self.debugger.delete_watchpoint(id)?;
+            }
             Some(("back_trace", _)) => {
                 let stack = self.debugger.read_stack();
                 for i in (0..stack.len()).rev() {
@@ -541,7 +549,14 @@ impl Shell {
         match reason {
             StopReason::BreakPoint(bp_addr) => {
                 let bp = self.debugger.get_bp(bp_addr).unwrap();
-                println!("bp #{} {}", bp.number, bp.symbol);
+                let bnum = self
+                    .debugger
+                    .get_breaks()?
+                    .iter()
+                    .take_while(|b| b.1.addr != bp_addr)
+                    .count()
+                    + 1;
+                println!("bp #{} {}", bnum, bp.symbol);
             }
             StopReason::Exit(_) => {
                 println!("Exit");
@@ -571,7 +586,14 @@ impl Shell {
             },
             StopReason::WatchPoint(addr) => {
                 let wp = self.debugger.get_watch(addr).unwrap();
-                println!("Watch #{} 0x{:04x} ({}) ", wp.number, wp.addr, wp.symbol);
+                let wnum = self
+                    .debugger
+                    .get_watches()?
+                    .iter()
+                    .take_while(|w| w.1.addr != addr)
+                    .count()
+                    + 1;
+                println!("Watch #{} 0x{:04x} ({}) ", wnum, wp.addr, wp.symbol);
             }
             StopReason::Finish => {
                 println!("Finish");

@@ -7,6 +7,8 @@ the same functionality as the cli shell.
 
 use anyhow::{bail, Result};
 use evalexpr::Value;
+
+use std::cell::RefCell;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::{
@@ -22,7 +24,6 @@ use crate::{
     debugger::cpu::{Cpu, ShadowFlags},
     debugger::execute::StopReason,
     debugger::loader,
-    expr::DB65Context,
     log::say,
 };
 
@@ -72,8 +73,8 @@ pub struct Symbol {
 }
 type InterceptFunc = fn(&mut Debugger, bool) -> Result<Option<StopReason>>;
 pub struct Debugger {
-    pub break_points: HashMap<u16, BreakPoint>,
-    pub(crate) watch_points: HashMap<u16, WatchPoint>,
+    pub(crate) break_points: BTreeMap<u16, BreakPoint>,
+    pub(crate) watch_points: BTreeMap<u16, WatchPoint>,
     pub(crate) source_info: BTreeMap<u16, SourceInfo>,
     pub(crate) current_file: Option<i64>,
     pub(crate) next_bp: Option<u16>,
@@ -87,7 +88,6 @@ pub struct Debugger {
     pub(crate) enable_mem_check: bool,
     load_name: String,
     pub(crate) run_done: bool,
-    pub(crate) expr_context: DB65Context,
     pub(crate) dbgdb: DebugData,
     pub(crate) seg_list: Vec<Segment>,
     pub(crate) heap_blocks: HashMap<u16, HeapBlock>,
@@ -97,6 +97,7 @@ pub struct Debugger {
     pub(crate) regbank_addr: Option<u16>,
     pub(crate) regbank_size: Option<u16>,
     pub(crate) ctrlc: Arc<AtomicBool>,
+    pub(crate) expr_value: RefCell<evalexpr::Value>,
 }
 
 pub struct HeapBlock {
@@ -149,7 +150,6 @@ pub struct StackFrame {
 pub struct BreakPoint {
     pub(crate) addr: u16,
     pub(crate) symbol: String,
-    pub(crate) number: usize,
     pub(crate) temp: bool,
 }
 #[derive(Debug, Clone)]
@@ -158,17 +158,18 @@ pub enum WatchType {
     Write,
     ReadWrite,
 }
+#[derive(Debug, Clone)]
 pub struct WatchPoint {
     pub(crate) addr: u16,
     pub(crate) symbol: String,
-    pub(crate) number: usize,
     pub(crate) watch: WatchType,
 }
 impl Debugger {
     pub fn new() -> Self {
+        Cpu::reset();
         let s = Self {
-            break_points: HashMap::new(),
-            watch_points: HashMap::new(),
+            break_points: BTreeMap::new(),
+            watch_points: BTreeMap::new(),
             source_info: BTreeMap::new(),
             current_file: None,
             loader_start: 0,
@@ -180,8 +181,7 @@ impl Debugger {
             next_bp: None,
             load_name: String::new(),
             run_done: false,
-            expr_context: DB65Context::new(),
-            dbgdb: DebugData::new().unwrap(),
+            dbgdb: DebugData::new(".db65.db").unwrap(),
             seg_list: Vec::new(),
             source_mode: SourceDebugMode::None,
             call_intercepts: HashMap::new(),
@@ -192,6 +192,7 @@ impl Debugger {
             regbank_addr: None,
             regbank_size: None,
             ctrlc: Arc::new(AtomicBool::new(false)),
+            expr_value: RefCell::new(Value::Int(0)),
         };
         let ctrlc = s.ctrlc.clone();
         ctrlc::set_handler(move || {
@@ -203,19 +204,26 @@ impl Debugger {
     pub fn delete_breakpoint(&mut self, id_opt: Option<&String>) -> Result<()> {
         if let Some(id) = id_opt {
             if let Ok(num) = id.parse::<usize>() {
-                if let Some(find) = self.break_points.iter().find_map(|bp| {
-                    if bp.1.number == num {
-                        Some(*bp.0)
-                    } else {
-                        None
-                    }
-                }) {
+                if let Some(find) = self.break_points.iter().map(|e| *e.0).nth(num - 1) {
                     self.break_points.remove(&find);
                 }
             }
             // else lookup symbol?
         } else {
             self.break_points.clear();
+        };
+        Ok(())
+    }
+    pub fn delete_watchpoint(&mut self, id_opt: Option<&String>) -> Result<()> {
+        if let Some(id) = id_opt {
+            if let Ok(num) = id.parse::<usize>() {
+                if let Some(find) = self.watch_points.iter().map(|e| *e.0).nth(num - 1) {
+                    self.watch_points.remove(&find);
+                }
+            }
+            // else lookup symbol?
+        } else {
+            self.watch_points.clear();
         };
         Ok(())
     }
@@ -226,7 +234,6 @@ impl Debugger {
             BreakPoint {
                 addr: bp_addr,
                 symbol: save_sym,
-                number: self.break_points.len() + 1,
                 temp,
             },
         );
@@ -245,7 +252,6 @@ impl Debugger {
             WatchPoint {
                 addr: wp_addr,
                 symbol: save_sym,
-                number: self.watch_points.len() + 1,
                 watch: wt,
             },
         );
@@ -316,26 +322,18 @@ impl Debugger {
     pub fn load_dbg(&mut self, file: &Path) -> Result<()> {
         let fd = File::open(file)?;
         let mut reader = BufReader::new(fd);
+        self.dbgdb.clear()?;
         self.dbgdb.parse(&mut reader)?;
 
         self.dbgdb.load_seg_list(&mut self.seg_list)?;
         self.dbgdb.load_all_cfiles()?;
         self.source_info.clear();
         self.dbgdb.load_all_source_files(&mut self.source_info)?;
-        self.dbgdb
-            .load_expr_symbols(&mut self.expr_context.symbols)?;
 
         self.load_intercepts()?;
         self.init_shadow()?;
         self.dbgdb.load_files(&mut self.file_table)?;
 
-        // load file lines int expr db
-        for (x, si) in self.source_info.iter() {
-            if let Some(name) = self.lookup_file_by_id(si.file_id) {
-                let str = format!("{}:{}", name.short_name, si.line_no);
-                self.expr_context.symbols.insert(str, Value::Int(*x as i64));
-            }
-        }
         let regbank = self.dbgdb.get_symbol("zeropage.regbank")?;
         if regbank.len() != 0 {
             self.regbank_addr = Some(regbank[0].1);
@@ -359,7 +357,17 @@ impl Debugger {
         let s = self.dbgdb.get_symbols(filter)?;
         Ok(s)
     }
+    fn reset(&mut self) {
+        self.stack_frames.clear();
+        self.heap_blocks.clear();
+        self.run_done = false;
+        self.next_bp = None;
+        self.source_mode = SourceDebugMode::None;
+        self.ticks = 0;
+        Cpu::reset();
+    }
     pub fn load_code(&mut self, file: &Path) -> Result<(u16, u16)> {
+        self.reset();
         let (sp65_addr, run, _cpu, size) = loader::load_code(file)?;
         // println!("size={:x}, entry={:x}, cpu={}", size, run, cpu);
         Cpu::sp65_addr(sp65_addr);
@@ -380,12 +388,13 @@ impl Debugger {
 
         Ok((size, run))
     }
-    pub fn get_breaks(&self) -> Vec<u16> {
-        self.break_points.iter().map(|bp| bp.1.addr).collect()
+    pub fn get_breaks(&self) -> Result<&BTreeMap<u16, BreakPoint>> {
+        Ok(&self.break_points)
     }
-    pub fn get_watches(&self) -> Vec<u16> {
-        self.watch_points.iter().map(|wp| wp.1.addr).collect()
+    pub fn get_watches(&self) -> Result<&BTreeMap<u16, WatchPoint>> {
+        Ok(&self.watch_points)
     }
+
     pub fn go(&mut self) -> Result<StopReason> {
         if !self.run_done {
             self.run(vec![])

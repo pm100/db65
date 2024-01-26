@@ -34,21 +34,40 @@ pub struct SourceFile {
 }
 pub struct DebugData {
     pub conn: Connection,
+    name: String,
     pub cc65_dir: Option<PathBuf>,
 }
 
 impl DebugData {
-    pub fn new() -> Result<DebugData> {
-        let dbfile = "dbg.db";
-        if fs::metadata(dbfile).is_ok() {
-            std::fs::remove_file("dbg.db")?;
+    pub fn new(name: &str) -> Result<DebugData> {
+        if fs::metadata(name).is_ok() {
+            std::fs::remove_file(name)?;
         }
         let mut ret = Self {
-            conn: Connection::open("dbg.db")?,
+            conn: Connection::open(name)?,
             cc65_dir: None,
+            name: name.to_string(),
         };
         ret.create_tables()?;
         Ok(ret)
+    }
+
+    pub fn clear(&mut self) -> Result<()> {
+        let tx = self.conn.transaction()?;
+        tx.execute("delete from symdef", [])?;
+        tx.execute("delete from symref", [])?;
+        tx.execute("delete from line", [])?;
+        tx.execute("delete from file", [])?;
+        tx.execute("delete from source", [])?;
+        tx.execute("delete from source_line", [])?;
+        tx.execute("delete from segment", [])?;
+        tx.execute("delete from span", [])?;
+        tx.execute("delete from scope", [])?;
+        tx.execute("delete from csymbol", [])?;
+        tx.execute("delete from module", [])?;
+        tx.commit()?;
+
+        Ok(())
     }
     fn convert_symbol_type(s: &str) -> SymbolType {
         match s {
@@ -224,7 +243,8 @@ impl DebugData {
         let full_path = if let Some(p) = self.find_file(file)? {
             p
         } else {
-            bail!("can't find file {}", file.display())
+            say(&format!("can't find file {}", file.display()));
+            return Ok(());
         };
 
         let fd = File::open(full_path)?;

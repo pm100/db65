@@ -1,4 +1,5 @@
 =topics
+
 symbols,s       - information about symbols, names ,uses..
 breakpoint,b    - information about break and watch points
 traps,t         - information about traps (invalid writes, reads..)
@@ -6,6 +7,7 @@ watch,w         - watchpoints
 ccode,c         - working with c source code
 expressions,ex  - expression evaluator
 stop            - what happens when code execution is interrupted
+misc            - general points about commands etc
 
 about accepts the long or short topic name ('about s' for symbols)
 =symbols,s
@@ -119,7 +121,14 @@ example
     ca65 -g  -t sim6502 filetest.s -o filetest.o
     ld65 --dbgfile filetest.dbg  -t sim6502 filetest.o -o filetest sim6502.lib 
 
-    then
+or
+
+    cl65 -t sim6502 -g --ld-args --dbgfile --ld-args argtest.sym argtest.c 
+
+    note that this does not keep the intermediate .s file. db65 will complain
+    about that but it does not matter at the moment, no features use the .s files
+
+then
 
     db65 sim6502 debugger 0.2.1 (16024e9)
     >> load filetest
@@ -159,17 +168,31 @@ filetest.c:17               FILE *foo = fopen("foo.txt", "w");
 >> p -s buf
 yo
 
+Note that globals do not have their names as symbols, they have their
+'system' name  (toolchain limitation). IE
+
+    char buffer[100];
+
+is called '_buffer', not 'buffer'
+
+Static locals are not visible (toolchain limitation)
+locals declared within code blocks are not visible (toolchain limitation)
+
 TODO
 - no way to use locals in expressions
 - no 'nice' change variable command, write byte has to be used
 - watch points set on locals will fire when that stack memory is reused
 
 =expression,ex
-Expressions can be used anywhere an address is required. Expr command
-can be used to test an expression and also to inspect values.
+Expressions can be used anywhere an address is required. An expression is
+signalled by preceding it with an '=' character.
+
+The 'expr' command can be used to test an expression and also to inspect values.
+
+
 
 Examples:
-expr =0x20          evaluates to 0x20 (redundant)
+
 expr =.xr           the xr register
 expr =.xr+1         the xr register plus 1
 dis =.pc-6          disassemble from pc-6
@@ -186,6 +209,7 @@ p -s =@(sreg)       print a string pointed to by sreg, sreg+1
 Note if there are spaces in the expression, you must quote it:
 mem '=@(ptr + 0x20)'
 =stop
+
 When execution stops for any reason other than program exit the current
 code location is displayed, preceded by the reason for the stop.
 
@@ -203,3 +227,14 @@ TODO
 - execute n statments or instructions
 - trace, ie execute one line or instruction, report state and then continue
 - resume at a different address (doable via changing pc using reg command)
+
+=misc,m
+The command line supports command recall using up and down arrows.
+Reverse search via ctrl-r
+
+Command history is kept from session to session
+
+When code is running ctrl-c will interrupt it
+
+Hex strings can be entered as 0xff, 0Xff or $ff. 
+

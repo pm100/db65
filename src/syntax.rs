@@ -156,6 +156,13 @@ pub fn syntax() -> Command {
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
+            Command::new("delete_watchpoint")
+                .visible_alias("dwp")
+                .arg(Arg::new("id").required(false))
+                .about("Delete watchpoint")
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
             Command::new("print")
                 .visible_alias("p")
                 .arg(arg!(<address>  "address of value to print"))

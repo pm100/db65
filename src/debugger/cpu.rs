@@ -36,12 +36,6 @@ static mut THECPU: Cpu = Cpu {
     memhits: [(false, 0); 8],
     memhitcount: 0,
     paracall: false,
-    tainted_ac: false,
-    tainted_xr: false,
-    tainted_yr: false,
-    tainted_zr: false,
-    tainted_sr: false,
-    tainted_sp: false,
 };
 
 pub enum MemCheck {
@@ -61,12 +55,6 @@ pub struct Cpu {
     memhits: [(bool, u16); 8],    // used for data watches
     memhitcount: u8,              // entry count in hit array for this instruction
     pub paracall: bool,           // we just did a pv call
-    tainted_ac: bool,             // the ac is tainted
-    tainted_xr: bool,             // the xr is tainted
-    tainted_yr: bool,             // the yr is tainted
-    tainted_zr: bool,             // the zr is tainted
-    tainted_sr: bool,             // the sr is tainted
-    tainted_sp: bool,             // the sp is tainted
 }
 bitflags! {
     #[derive(Copy, Clone, Default, Debug)]
