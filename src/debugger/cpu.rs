@@ -186,7 +186,7 @@ pub struct CPURegs {
     pub ac: u32, /* Accumulator */
     pub xr: u32, /* X register */
     pub yr: u32, /* Y register */
-    pub zr: u32, /* Z register */
+    pub zr: u32, /* Z register (which does not exist!) */
     pub sr: u32, /* Status register */
     pub sp: u32, /* Stackpointer */
     pub pc: u32, /* Program counter */
@@ -292,11 +292,7 @@ impl Cpu {
             (*THECPU.regs).yr = v as u32;
         }
     }
-    pub fn write_zr(v: u8) {
-        unsafe {
-            (*THECPU.regs).zr = v as u32;
-        }
-    }
+
     pub fn write_sr(v: u8) {
         unsafe {
             (*THECPU.regs).sr = v as u32;
@@ -315,9 +311,6 @@ impl Cpu {
     }
     pub fn read_yr() -> u8 {
         unsafe { (*THECPU.regs).yr as u8 }
-    }
-    pub fn read_zr() -> u8 {
-        unsafe { (*THECPU.regs).zr as u8 }
     }
     pub fn read_sr() -> u8 {
         unsafe { (*THECPU.regs).sr as u8 }
@@ -396,11 +389,6 @@ impl fmt::Debug for Status {
         };
         str.push('-');
         str.push('-');
-        // if self.contains(Status::BREAK) {
-        //     str.push('B');
-        // } else {
-        //     str.push('b');
-        // };
 
         if self.contains(Status::DECIMAL) {
             str.push('D');
@@ -432,7 +420,6 @@ fn regreadwrite() {
     Cpu::write_ac(1);
     Cpu::write_xr(2);
     Cpu::write_yr(3);
-    Cpu::write_zr(4);
     Cpu::write_sr(5);
     Cpu::write_sp(6);
     Cpu::write_pc(0x7777);
@@ -440,7 +427,6 @@ fn regreadwrite() {
     assert_eq!(Cpu::read_ac(), 1);
     assert_eq!(Cpu::read_xr(), 2);
     assert_eq!(Cpu::read_yr(), 3);
-    assert_eq!(Cpu::read_zr(), 4);
     assert_eq!(Cpu::read_sr(), 5);
     assert_eq!(Cpu::read_sp(), 6);
     assert_eq!(Cpu::read_pc(), 0x7777);

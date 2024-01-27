@@ -220,13 +220,18 @@ impl DebugData {
         }
         Ok(v)
     }
-
+    pub fn set_cc65_dir(&mut self, dir: &Path) -> Result<()> {
+        self.cc65_dir = Some(dir.to_path_buf());
+        Ok(())
+    }
     pub fn load_all_cfiles(&mut self) -> Result<()> {
         let rows = self.query_db(
             &[],
             "select name,file.id from file,cline where cline.file = file.id group by name",
         )?;
-        self.cc65_dir = self.guess_cc65_dir()?;
+        if self.cc65_dir.is_none() {
+            self.cc65_dir = self.guess_cc65_dir()?;
+        }
         for row in rows {
             if let SqlValue::Text(name) = &row[0] {
                 let path = Path::new(&name);

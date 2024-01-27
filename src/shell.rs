@@ -15,7 +15,7 @@ use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
 use std::collections::VecDeque;
 use std::fs::File;
-use std::io::{ErrorKind, Read};
+use std::io::Read;
 use std::path::{Path, PathBuf};
 /*
 
@@ -23,14 +23,14 @@ TODO list
 
 
 assembler listing
-clean up expr handling
-set cc65 root
+
+
 options
  - dis len
   - mem len
   - force asm
   - .dbg alternative
-65c02 support
+
 trace command
 log / trace in code
 dbiginfo for module
@@ -53,6 +53,8 @@ pub struct Shell {
     _current_mem_addr: u16,
     waw: CodeLocation,
     about: About,
+    number_of_lines: u8,
+    force_assembler: bool,
 }
 static SHELL_HISTORY_FILE: &str = ".db65_history";
 impl Shell {
@@ -63,6 +65,8 @@ impl Shell {
             _current_mem_addr: 0,
             waw: CodeLocation::default(),
             about: About::new(),
+            number_of_lines: 10,
+            force_assembler: false,
         }
     }
     pub fn shell(&mut self, file: Option<PathBuf>, _args: &[String]) -> Result<u8> {
@@ -233,7 +237,8 @@ impl Shell {
                 let addr_str = args.get_one::<String>("address").unwrap();
                 let addr_str = &self.expand_expr(addr_str)?;
                 let (addr, _) = self.debugger.convert_addr(addr_str)?;
-                let chunk = self.debugger.get_chunk(addr, 48)?;
+                let len = self.number_of_lines as u16 * 16;
+                let chunk = self.debugger.get_chunk(addr, len)?;
                 self.mem_dump(addr, &chunk);
             }
 
@@ -324,7 +329,7 @@ impl Shell {
                     a
                 };
                 self.current_dis_addr = addr;
-                for _i in 0..10 {
+                for _i in 0..self.number_of_lines {
                     let chunk = self.debugger.get_chunk(addr, 3)?;
                     if chunk.len() < 3 {
                         // we ran off the end of memory
@@ -451,9 +456,11 @@ impl Shell {
                         .lookup_file_by_name(filename)
                         .ok_or(anyhow!("Unknown source file {}", filename))?;
 
-                    let source = self
-                        .debugger
-                        .get_source(fileid.file_id, start, start + 10)?;
+                    let source = self.debugger.get_source(
+                        fileid.file_id,
+                        start,
+                        start + self.number_of_lines as i64,
+                    )?;
                     for (i, s) in source.iter().enumerate() {
                         println!("{}:{}\t\t{}", filename, i + start as usize, s);
                     }
@@ -463,7 +470,11 @@ impl Shell {
                     } else {
                         (-1, 0)
                     };
-                    let source = self.debugger.get_source(fileid, from, from + 10)?;
+                    let source = self.debugger.get_source(
+                        fileid,
+                        from,
+                        from + self.number_of_lines as i64,
+                    )?;
                     let file_name = self
                         .debugger
                         .lookup_file_by_id(fileid)
@@ -481,6 +492,37 @@ impl Shell {
                     println!("{}", self.about.get_topic("topics"));
                 }
             }
+            Some(("status", _)) => {
+                if !self.debugger.load_name.is_empty() {
+                    println!("Loaded code: {}", self.debugger.load_name);
+                }
+                if let Some(dbgfile) = &self.debugger.dbg_file {
+                    println!("Loaded dbginfo: {}", dbgfile.display());
+                }
+
+                println!("settings:");
+                println!("  lines: {}", self.number_of_lines);
+                println!("  assembler: {}", self.force_assembler);
+                println!("  source_tree: {}", self.debugger.get_cc65_dir().display());
+                println!("  dbg suffix: {}", self.debugger.dbg_suffix);
+            }
+            Some(("settings", args)) => {
+                if let Some(cc65_dir) = args.get_one::<String>("source_tree") {
+                    self.debugger.set_cc65_dir(cc65_dir.as_str())?;
+                }
+                if let Some(number) = args.get_one("lines") {
+                    self.number_of_lines = *number;
+                }
+                if let Some(assm) = args.get_one("assembler") {
+                    self.force_assembler = *assm;
+                    // forces the redisplay of state
+                    self.stop(StopReason::None)?;
+                }
+                if let Some(dbgsuffix) = args.get_one::<String>("dbgfile") {
+                    self.debugger.set_dbgfile_suffix(dbgsuffix.as_str());
+                }
+            }
+
             Some((name, _matches)) => unimplemented!("{name}"),
             None => unreachable!("subcommand required"),
         }
@@ -601,30 +643,33 @@ impl Shell {
             StopReason::Ctrlc => {
                 println!("Ctrl-c break");
             }
+            StopReason::None => {}
         }
 
         // now display where we are
         let inst_addr = self.debugger.read_pc();
         self.waw = self.debugger.where_are_we(inst_addr)?;
 
-        if let Some(cf) = self.waw.cfile {
-            let file_name = self.debugger.lookup_file_by_id(cf).unwrap();
-            println!(
-                "{}:{}\t\t{}",
-                file_name.short_name,
-                self.waw.cline,
-                self.waw.ctext.as_ref().unwrap()
-            );
-        } else {
-            // disassemble the current instruction
+        match self.waw.cfile {
+            Some(cf) if !self.force_assembler => {
+                let file_name = self.debugger.lookup_file_by_id(cf).unwrap();
+                println!(
+                    "{}:{}\t\t{}",
+                    file_name.short_name,
+                    self.waw.cline,
+                    self.waw.ctext.as_ref().unwrap()
+                );
+            }
+            _ => {
+                // disassemble the current instruction
 
-            let mem = self.debugger.get_chunk(self.debugger.read_pc(), 3).unwrap();
-            self.debugger.dis(&mem, inst_addr);
+                let mem = self.debugger.get_chunk(self.debugger.read_pc(), 3).unwrap();
+                self.debugger.dis(&mem, inst_addr);
 
-            // print pc, dissasembled instruction and registers
+                // print pc, dissasembled instruction and registers
 
-            let stat = Status::from_bits_truncate(self.debugger.read_sr());
-            println!(
+                let stat = Status::from_bits_truncate(self.debugger.read_sr());
+                println!(
                 "{:04x}:       {:<15} ac=${:02x} xr=${:02x} yr=${:02x} sp=${:02x} sr=${:02x} {:?}",
                 self.debugger.read_pc(),
                 self.debugger.dis_line,
@@ -635,6 +680,7 @@ impl Shell {
                 stat,
                 stat
             );
+            }
         };
         Ok(())
     }

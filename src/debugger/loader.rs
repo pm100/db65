@@ -51,7 +51,8 @@ pub fn load_code(file: &Path) -> Result<(u8, u16, u8, u16)> {
         load += 1;
         count += 1;
     }
-    say(format!("Loaded {} bytes", count).as_str());
+    let cpu_str = if cpu == 0 { "6502" } else { "65c02" };
+    say(&format!("Loaded {} bytes, cpu={}", count, cpu_str));
     Ok((sp65_addr, run, cpu, count))
 }
 fn get_u16(bytes: &mut Bytes<BufReader<File>>) -> Result<u16> {

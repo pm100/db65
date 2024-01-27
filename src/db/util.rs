@@ -2,10 +2,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Result};
 
-
-use rusqlite::{
-    types::{Value as SqlValue}, ToSql,
-};
+use rusqlite::{types::Value as SqlValue, ToSql};
 
 use super::debugdb::DebugData;
 
@@ -49,9 +46,31 @@ impl DebugData {
 
     pub fn find_file(&self, file: &Path) -> Result<Option<PathBuf>> {
         // find a file somewhere
-        if file.is_absolute() {
+        if file.is_absolute() || file.has_root() {
             if file.exists() {
-                return Ok(Some(file.to_path_buf()));
+                return Ok(Some(PathBuf::from(file)));
+            }
+            // maybe a bad absolute ie
+            // /home/runner/work/cc65/cc65/asminc/longbranch.mac
+            // this code slices of the file name then tries
+            // <cc65dir>/longbranch.mac
+            // <cc65dir>/asminc/longbranch.mac
+            // ...
+            if let Some(cc65) = &self.cc65_dir {
+                let name = file.file_name().unwrap();
+                let mut bits = file.iter().map(|c| c.to_string_lossy()).collect::<Vec<_>>();
+                bits.pop(); // drop file name part
+
+                for i in 0..bits.len() {
+                    let mut path_try = PathBuf::from(cc65);
+                    for j in 0..i {
+                        path_try.push(bits[bits.len() - 1 - j].as_ref());
+                    }
+                    path_try.push(name);
+                    if path_try.exists() {
+                        return Ok(Some(path_try));
+                    }
+                }
             }
         } else {
             if let Some(cc65) = &self.cc65_dir {

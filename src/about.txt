@@ -103,6 +103,8 @@ location of this tree relative to the compiled binary so if you
 have the source code installed db65 will probably find it. If
 not then full assembly level debugging is still available.
 
+You can tell db65 where the source code is using the 'set -s' command
+
 Compiling
 
 The full feature set requires that
@@ -128,29 +130,13 @@ or
     note that this does not keep the intermediate .s file. db65 will complain
     about that but it does not matter at the moment, no features use the .s files
 
-then
-
-    db65 sim6502 debugger 0.2.1 (16024e9)
-    >> load filetest
-    Loaded 6533 bytes
-    Loading debug info from "filetest.dbg"
-    files: 117
-    modules: 82
-    segments: 9
-    symbols: 1602
-    load source file common/_scanf.c
-    load source file common/fgetc.c
-    load source file common/fgets.c
-    load source file common/perror.c
-    load source file filetest.c
-    >>
 
 Displaying Variables:
 
 db65 does not know the size or type of variables (yet) but it does know
 their location
 
-when paused in a c stack frame the local stack variables are available.
+When paused in a c stack frame the local stack variables are available.
 They can be displayed using 'print' but the type must be specified
 
 example
@@ -179,7 +165,6 @@ Static locals are not visible (toolchain limitation)
 locals declared within code blocks are not visible (toolchain limitation)
 
 TODO
-- no way to use locals in expressions
 - no 'nice' change variable command, write byte has to be used
 - watch points set on locals will fire when that stack memory is reused
 
@@ -237,4 +222,12 @@ Command history is kept from session to session
 When code is running ctrl-c will interrupt it
 
 Hex strings can be entered as 0xff, 0Xff or $ff. 
+
+Pressing enter on a blank line repeats the last command
+For several coomands repeating the last command with no arguments
+does a 'next chunk' operation:
+ - dis, next set of disassembly lines
+ - memory, next chunk of memory
+ - list source - next block of lines
+ 
 

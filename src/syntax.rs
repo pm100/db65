@@ -43,14 +43,7 @@ pub fn syntax() -> Command {
                 .arg_required_else_help(true)
                 .help_template(APPLET_TEMPLATE),
         )
-        // .subcommand(
-        //     Command::new("load_source")
-        //         .alias("xx")
-        //         .about("Load binary file")
-        //         .arg(Arg::new("file").required(true))
-        //         .arg_required_else_help(true)
-        //         .help_template(APPLET_TEMPLATE),
-        // )
+
         .subcommand(
             Command::new("run")
                 .about("Run code")
@@ -102,6 +95,12 @@ pub fn syntax() -> Command {
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
+            Command::new("finish")
+                .visible_alias("fin")
+                .about("Run until current function returns")
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
             Command::new("break")
                 .about("Set break point")
                 .visible_alias("b")
@@ -130,6 +129,20 @@ pub fn syntax() -> Command {
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
+            Command::new("delete_breakpoint")
+                .visible_alias("dbp")
+                .arg(Arg::new("id").required(false))
+                .about("Delete breakpoint")
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("delete_watchpoint")
+                .visible_alias("dwp")
+                .arg(Arg::new("id").required(false))
+                .about("Delete watchpoint")
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
             Command::new("dis")
                 .about("Disassemble")
                 .arg(Arg::new("address"))
@@ -148,20 +161,7 @@ pub fn syntax() -> Command {
                 .about("Display call stack")
                 .help_template(APPLET_TEMPLATE),
         )
-        .subcommand(
-            Command::new("delete_breakpoint")
-                .visible_alias("dbp")
-                .arg(Arg::new("id").required(false))
-                .about("Delete breakpoint")
-                .help_template(APPLET_TEMPLATE),
-        )
-        .subcommand(
-            Command::new("delete_watchpoint")
-                .visible_alias("dwp")
-                .arg(Arg::new("id").required(false))
-                .about("Delete watchpoint")
-                .help_template(APPLET_TEMPLATE),
-        )
+
         .subcommand(
             Command::new("print")
                 .visible_alias("p")
@@ -195,12 +195,7 @@ Match is a substring, eg 'lsy main' will list all symbols containing 'main'",
                 .about("Enable debug checks")
                 .help_template(APPLET_TEMPLATE),
         )
-        .subcommand(
-            Command::new("finish")
-                .visible_alias("fin")
-                .about("Run until current function returns")
-                .help_template(APPLET_TEMPLATE),
-        )
+
         .subcommand(
             Command::new("reg")
                 .about("Set register value")
@@ -234,6 +229,32 @@ Match is a substring, eg 'lsy main' will list all symbols containing 'main'",
             Command::new("about")
                 .about("explanation of commands")
                 .arg(arg!([topic]))
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("settings")
+                .about("change various settings")
+                .alias("set")
+                .arg(arg!(source_tree: -s --source_tree <path> "cc65 source tree")
+                    .value_parser(clap::builder::PathBufValueParser::new()))
+                .arg(
+                    arg!(lines: -l --lines <number> "number of lines to list (dis, lsc)")
+                        .value_parser(clap::value_parser!(u8).range(1..)),
+                )
+                .arg(
+                    arg!(assembler: -a --assembler <switch> "Force always assembly display ")
+                        .value_parser(clap::builder::BoolishValueParser::new()),
+                )
+                .arg(
+                    arg!(dbgfile: -g --dbgfile_suffix <suffix> "File suffix for auto load of dbginfo files")
+                        .value_parser(clap::builder::StringValueParser::new()),
+                )
+                .after_help("'switch' means, 'on' or 'off'")
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
+            Command::new("status")
+                .about("display db65 state")
                 .help_template(APPLET_TEMPLATE),
         )
 }

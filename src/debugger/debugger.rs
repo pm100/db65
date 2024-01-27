@@ -9,6 +9,7 @@ use anyhow::{bail, Result};
 use evalexpr::Value;
 
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::{
@@ -40,11 +41,7 @@ pub struct HLSym {
     pub seg: u8,
     pub scope: i64,
 }
-pub enum DebugMode {
-    Unknown,
-    Source,
-    Assembler,
-}
+
 #[derive(Debug, Default)]
 pub struct CodeLocation {
     pub module: Option<i32>,
@@ -86,18 +83,19 @@ pub struct Debugger {
     pub(crate) stack_frames: Vec<StackFrame>,
     pub(crate) enable_stack_check: bool,
     pub(crate) enable_mem_check: bool,
-    load_name: String,
+    pub(crate) load_name: String,
     pub(crate) run_done: bool,
     pub(crate) dbgdb: DebugData,
     pub(crate) seg_list: Vec<Segment>,
     pub(crate) heap_blocks: HashMap<u16, HeapBlock>,
     pub(crate) privileged_mode: bool,
-    pub(crate) debug_mode: DebugMode,
     pub(crate) file_table: HashMap<i64, SourceFile>,
     pub(crate) regbank_addr: Option<u16>,
     pub(crate) regbank_size: Option<u16>,
     pub(crate) ctrlc: Arc<AtomicBool>,
     pub(crate) expr_value: RefCell<evalexpr::Value>,
+    pub(crate) dbg_suffix: String,
+    pub(crate) dbg_file: Option<PathBuf>,
 }
 
 pub struct HeapBlock {
@@ -187,12 +185,14 @@ impl Debugger {
             call_intercepts: HashMap::new(),
             heap_blocks: HashMap::new(),
             privileged_mode: false,
-            debug_mode: DebugMode::Unknown,
+
             file_table: HashMap::new(),
             regbank_addr: None,
             regbank_size: None,
             ctrlc: Arc::new(AtomicBool::new(false)),
             expr_value: RefCell::new(Value::Int(0)),
+            dbg_suffix: String::from(".dbg"),
+            dbg_file: None,
         };
         let ctrlc = s.ctrlc.clone();
         ctrlc::set_handler(move || {
@@ -245,6 +245,13 @@ impl Debugger {
     pub fn enable_mem_check(&mut self, enable: bool) {
         self.enable_mem_check = enable;
     }
+    pub fn set_cc65_dir(&mut self, dir: &str) -> Result<()> {
+        let path = Path::new(dir);
+        if !path.exists() {
+            bail!("{} does not exist", dir);
+        }
+        self.dbgdb.set_cc65_dir(path)
+    }
     pub fn set_watch(&mut self, addr_str: &str, wt: WatchType) -> Result<()> {
         let (wp_addr, save_sym) = self.convert_addr(addr_str)?;
         self.watch_points.insert(
@@ -257,7 +264,12 @@ impl Debugger {
         );
         Ok(())
     }
-
+    pub fn get_cc65_dir(&self) -> &Path {
+        self.dbgdb
+            .cc65_dir
+            .as_deref()
+            .unwrap_or_else(|| Path::new(""))
+    }
     pub fn next_statement(&mut self) -> Result<StopReason> {
         self.source_mode = SourceDebugMode::Next;
         self.execute(0)
@@ -271,6 +283,9 @@ impl Debugger {
     }
     pub fn get_addr_map(&self) -> &BTreeMap<u16, SourceInfo> {
         &self.source_info
+    }
+    pub fn set_dbgfile_suffix(&mut self, suffix: &str) {
+        self.dbg_suffix = suffix.to_string();
     }
     pub fn get_source(&self, file: i64, from: i64, to: i64) -> Result<Vec<String>> {
         self.dbgdb.get_source(file, from, to)
@@ -342,11 +357,7 @@ impl Debugger {
         if regbanksize.len() != 0 {
             self.regbank_size = Some(regbanksize[0].1);
         }
-
-        Ok(())
-    }
-    pub fn load_source(&mut self, file: &Path) -> Result<()> {
-        self.dbgdb.load_source_file(file)?;
+        self.dbg_file = Some(file.to_path_buf());
         Ok(())
     }
 
@@ -501,9 +512,13 @@ impl Debugger {
         if addr_str.chars().next().unwrap().is_ascii_digit() {
             return Ok((addr_str.parse::<u16>()?, String::new()));
         }
+
+        // a c symbol?
         if let Some(caddr) = self.find_csym_address(addr_str)? {
             return Ok((caddr, addr_str.to_string()));
         }
+
+        // a regular symbol?
         let syms = self.dbgdb.get_symbol(addr_str)?;
         match syms.len() {
             0 => bail!("Symbol '{}' not found", addr_str),
@@ -514,13 +529,18 @@ impl Debugger {
 
     // reverse of convert_addr.
     // tried to find a symbol matching an address
-    // if not found it returns a numberic string
-    // prefernece is for a label
+    // if not found it returns a numeric string
+    // preference is for a label
     pub fn symbol_lookup(&self, addr: u16) -> Result<String> {
         let syms = self.dbgdb.find_symbol_by_addr(addr)?;
+
+        // look for lab first
         if let Some(sym) = syms.iter().find(|s| s.sym_type == SymbolType::Label) {
             return Ok(sym.name.clone());
         }
+
+        // no - take first matching eq
+
         if syms.len() > 0 {
             return Ok(syms[0].name.clone());
         }
@@ -553,10 +573,7 @@ impl Debugger {
     pub fn read_yr(&self) -> u8 {
         Cpu::read_yr()
     }
-    #[allow(dead_code)]
-    pub fn read_zr(&self) -> u8 {
-        Cpu::read_zr()
-    }
+
     pub fn read_sr(&self) -> u8 {
         Cpu::read_sr()
     }
@@ -569,9 +586,7 @@ impl Debugger {
     pub fn write_yr(&self, v: u8) {
         Cpu::write_yr(v);
     }
-    pub fn write_zr(&self, v: u8) {
-        Cpu::write_zr(v);
-    }
+
     pub fn write_sr(&self, v: u8) {
         Cpu::write_sr(v);
     }
@@ -614,6 +629,10 @@ impl Debugger {
         self.dbgdb.find_csym(name, scope)
     }
     pub fn where_are_we(&self, addr: u16) -> Result<CodeLocation> {
+        // given an address find out where we are
+        // finds seg, module, assembly line and c line
+        // if no debug data is available it returns an empty location
+
         let mut location = CodeLocation {
             module: None,
             cfile: None,
@@ -679,7 +698,7 @@ impl Debugger {
         // now find the c line
         if let Some(cline) = self.dbgdb.find_c_line(addr)? {
             // this will always find something but it might not be the right one
-
+            // so check in bounds of module
             let mstart = seg.modules[current_mod].offset + seg.start;
             let mend = mstart + seg.modules[current_mod].size;
             if cline.absaddr >= mstart && cline.absaddr < mend {

@@ -20,6 +20,7 @@ pub enum StopReason {
     Bug(BugType),
     Finish,
     Ctrlc,
+    None,
 }
 #[derive(Debug, Clone)]
 pub enum BugType {
