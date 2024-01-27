@@ -5,7 +5,7 @@ type StringRecord = Vec<String>;
 //pub const NO_PARAMS:  = [];
 use crate::db::util::Extract;
 use crate::log::say;
-use crate::{db::debugdb::DebugData, debugger::debugger::SegmentType};
+use crate::{db::debugdb::DebugData, debugger::core::SegmentType};
 use rusqlite::params;
 use std::{
     fs::File,
@@ -101,11 +101,10 @@ impl DebugData {
         let tx = self.conn.transaction()?;
         let mut symcount = 0;
         let mut fcount = 0;
-        let mut lcount = 0;
-        let mut scount = 0;
+
         let mut mcount = 0;
         let mut segcount = 0;
-        let mut spcount = 0;
+
         let mut ccount = 0;
 
         let start = SystemTime::now();
@@ -152,7 +151,7 @@ impl DebugData {
                 "lib\tid" => {}
                 "line\tid" => {
                     let line = Self::parse_line(&record)?;
-                    lcount += 1;
+
                     let ltype = if let Some(lt) = line.type_ { lt } else { 0 };
                     tx.execute(
                         "insert into line
@@ -225,7 +224,6 @@ impl DebugData {
                 }
                 "span\tid" => {
                     let span = Self::parse_span(&record)?;
-                    spcount += 1;
                     tx.execute(
                         "insert into span
                             (id, seg, start, size,  type) 
@@ -237,7 +235,6 @@ impl DebugData {
                 }
                 "scope\tid" => {
                     let scope = Self::parse_scope(record)?;
-                    scount += 1;
                     tx.execute(
                         "insert into scope 
                             (id, name, module, type, size, parent, sym) 
@@ -318,7 +315,7 @@ impl DebugData {
         say(&format!("segments: {}", segcount));
         say(&format!("symbols: {}", ccount + symcount));
         let end = SystemTime::now();
-        let duration = end.duration_since(start).unwrap();
+        let _duration = end.duration_since(start).unwrap();
         tx.commit()?;
         self.merge_csymbols(symcount)?;
         Ok(())
@@ -329,13 +326,13 @@ impl DebugData {
         let mut statics = Vec::new();
 
         for row in rows {
-            let id = row[0].vto_i64()?;
+            let _id = row[0].vto_i64()?;
             let name = row[1].vto_string()?;
             let scope = row[2].vto_i64()?;
             let type_ = row[3].vto_i64()?;
             let sc = row[4].vto_string()?;
             let sym = row[5].vto_i64()?;
-            let offset = row[6].vto_i64()?;
+            let _offset = row[6].vto_i64()?;
 
             match sc.as_str() {
                 "ext" => {}

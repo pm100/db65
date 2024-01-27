@@ -83,6 +83,7 @@ pub struct Debugger {
     pub(crate) stack_frames: Vec<StackFrame>,
     pub(crate) enable_stack_check: bool,
     pub(crate) enable_mem_check: bool,
+    pub(crate) enable_heap_check: bool,
     pub(crate) load_name: String,
     pub(crate) run_done: bool,
     pub(crate) dbgdb: DebugData,
@@ -174,8 +175,9 @@ impl Debugger {
             dis_line: String::new(),
             ticks: 0,
             stack_frames: Vec::new(),
-            enable_stack_check: false,
-            enable_mem_check: false,
+            enable_stack_check: true,
+            enable_mem_check: true,
+            enable_heap_check: true,
             next_bp: None,
             load_name: String::new(),
             run_done: false,
@@ -245,6 +247,9 @@ impl Debugger {
     pub fn enable_mem_check(&mut self, enable: bool) {
         self.enable_mem_check = enable;
     }
+    pub fn enable_heap_check(&mut self, enable: bool) {
+        self.enable_heap_check = enable;
+    }
     pub fn set_cc65_dir(&mut self, dir: &str) -> Result<()> {
         let path = Path::new(dir);
         if !path.exists() {
@@ -290,6 +295,9 @@ impl Debugger {
     pub fn get_source(&self, file: i64, from: i64, to: i64) -> Result<Vec<String>> {
         self.dbgdb.get_source(file, from, to)
     }
+
+    // because the intention is clearer my way :-)
+    #[allow(clippy::needless_range_loop)]
     fn init_shadow(&self) -> Result<()> {
         let shadow = Cpu::get_shadow();
         for seg in self.seg_list.iter().filter(|s| s.name != "EXEHDR") {
@@ -350,11 +358,11 @@ impl Debugger {
         self.dbgdb.load_files(&mut self.file_table)?;
 
         let regbank = self.dbgdb.get_symbol("zeropage.regbank")?;
-        if regbank.len() != 0 {
+        if !regbank.is_empty() {
             self.regbank_addr = Some(regbank[0].1);
         }
         let regbanksize = self.dbgdb.get_symbol("regbanksize")?;
-        if regbanksize.len() != 0 {
+        if !regbanksize.is_empty() {
             self.regbank_size = Some(regbanksize[0].1);
         }
         self.dbg_file = Some(file.to_path_buf());
@@ -541,7 +549,7 @@ impl Debugger {
 
         // no - take first matching eq
 
-        if syms.len() > 0 {
+        if !syms.is_empty() {
             return Ok(syms[0].name.clone());
         }
         Ok(format!("${:04x}", addr))
@@ -552,7 +560,7 @@ impl Debugger {
         if let Some(sym) = syms.iter().find(|s| s.sym_type == SymbolType::Label) {
             return Ok(sym.name.clone());
         }
-        if syms.len() > 0 {
+        if !syms.is_empty() {
             return Ok(syms[0].name.clone());
         }
 
@@ -600,7 +608,7 @@ impl Debugger {
         &self.stack_frames
     }
 
-    pub fn find_module(&self, addr: u16) -> Option<&SegChunk> {
+    pub fn _find_module(&self, addr: u16) -> Option<&SegChunk> {
         if self.seg_list.is_empty() {
             return None;
         }
@@ -625,7 +633,7 @@ impl Debugger {
         }
         Some(&seg.modules[current_mod])
     }
-    pub fn find_csym(&self, name: &str, scope: i64) -> Result<Option<HLSym>> {
+    pub fn _find_csym(&self, name: &str, scope: i64) -> Result<Option<HLSym>> {
         self.dbgdb.find_csym(name, scope)
     }
     pub fn where_are_we(&self, addr: u16) -> Result<CodeLocation> {

@@ -1,9 +1,9 @@
-use crate::{debugger::cpu::Cpu, debugger::debugger::Debugger, trace};
+use crate::{debugger::core::Debugger, debugger::cpu::Cpu, trace};
 use anyhow::{bail, Result};
 
 use super::{
+    core::HeapBlock,
     cpu::ShadowFlags,
-    debugger::HeapBlock,
     execute::{BugType, StopReason},
 };
 
@@ -111,7 +111,11 @@ impl Debugger {
                 (hb.size, hb.addr)
             } else {
                 // not found -> double or invalid free
-                return Ok(Some(StopReason::Bug(BugType::HeapCheck)));
+                if self.enable_heap_check {
+                    return Ok(Some(StopReason::Bug(BugType::HeapCheck)));
+                } else {
+                    return Ok(None);
+                }
             };
             self.heap_blocks.remove(&addr);
 
@@ -183,7 +187,11 @@ impl Debugger {
                 hb.realloc_size = Some(size);
             } else {
                 // not found -> realloc of non heap block
-                return Ok(Some(StopReason::Bug(BugType::HeapCheck)));
+                if self.enable_heap_check {
+                    return Ok(Some(StopReason::Bug(BugType::HeapCheck)));
+                } else {
+                    return Ok(None);
+                }
             };
 
             // realloc is privileged - it can write to unalloacted memory
@@ -200,8 +208,8 @@ impl Debugger {
     }
     fn read_arg(offset: u16) -> u16 {
         let sp65_addr = Cpu::get_sp65_addr() as u16;
-        let sp65 = Cpu::read_word((sp65_addr + offset) as u16);
-        let val = Cpu::read_word(sp65);
-        val
+        let sp65 = Cpu::read_word(sp65_addr + offset);
+
+        Cpu::read_word(sp65)
     }
 }

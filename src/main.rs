@@ -16,8 +16,8 @@ mod db {
     pub mod util;
 }
 mod debugger {
+    pub mod core;
     pub mod cpu;
-    pub mod debugger;
     pub mod execute;
     pub mod intercepts;
     pub mod loader;

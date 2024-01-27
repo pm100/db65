@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::log::say;
+
 
 pub struct About {
     db: HashMap<String, String>,

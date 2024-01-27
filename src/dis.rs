@@ -4,7 +4,7 @@ Disassembler portion of db65. Placed in a separate file for clarity
 liberally copied from pm100/v65
 */
 
-use crate::debugger::debugger::Debugger;
+use crate::debugger::core::Debugger;
 
 impl Debugger {
     // reads one instruction and loads its interpretation into

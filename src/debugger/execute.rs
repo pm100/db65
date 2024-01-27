@@ -30,12 +30,12 @@ pub enum BugType {
     SegCheck(u16),
 }
 use crate::{
+    debugger::core::{Debugger, FrameType, SourceDebugMode, StackFrame, WatchType},
     debugger::cpu::{Cpu, MemCheck},
-    debugger::debugger::{Debugger, FrameType, SourceDebugMode, StackFrame, WatchType},
 };
 use anyhow::anyhow;
 
-use super::debugger::JsrData;
+use super::core::JsrData;
 impl Debugger {
     pub fn execute(&mut self, mut count: u16) -> Result<StopReason> {
         let counting = count > 0;

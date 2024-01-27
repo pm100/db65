@@ -186,15 +186,18 @@ pub fn syntax() -> Command {
 Match is a substring, eg 'lsy main' will list all symbols containing 'main'",
                 ),
         )
-        .subcommand(
-            Command::new("enable_checks")
-                .visible_alias("en")
-                .arg(arg!( -m --memcheck  "enable memory check"))
-                //.arg(arg!(  -t --memtrace  "enable memory trace"))
-                .arg(arg!(  -s --stackcheck  "enable stack check"))
-                .about("Enable debug checks")
-                .help_template(APPLET_TEMPLATE),
-        )
+        // .subcommand(
+        //     Command::new("set_traps")
+        //         .visible_alias("en")
+        //         .arg(arg!( -m --memcheck <switch> "enable memory r/w traps")
+        //           .value_parser(clap::builder::BoolishValueParser::new()))
+        //         .arg(arg!( -h --memtrace <switch> "enable heap traps")
+        //            .value_parser(clap::builder::BoolishValueParser::new()))
+        //         .arg(arg!( -s --stackcheck <switch> "enable stack check")
+        //            .value_parser(clap::builder::BoolishValueParser::new()))
+        //         .about("set debug traps")
+        //         .help_template(APPLET_TEMPLATE),
+        // )
 
         .subcommand(
             Command::new("reg")
@@ -249,7 +252,11 @@ Match is a substring, eg 'lsy main' will list all symbols containing 'main'",
                     arg!(dbgfile: -g --dbgfile_suffix <suffix> "File suffix for auto load of dbginfo files")
                         .value_parser(clap::builder::StringValueParser::new()),
                 )
-                .after_help("'switch' means, 'on' or 'off'")
+                .arg(
+                    arg!(traps: -t --traps <switch> "Turn traps on or off ")
+                        .value_parser(clap::builder::BoolishValueParser::new()),
+                )
+                .after_help("'switch' means, 'on'/'true'/'yes' or 'off'/'false'/'no'")
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(

@@ -1,9 +1,7 @@
 #![allow(clippy::uninlined_format_args)]
 use crate::about::About;
+use crate::debugger::core::{CodeLocation, Debugger, FrameType::*, SymbolType, WatchType};
 use crate::debugger::cpu::Status;
-use crate::debugger::debugger::{
-    BreakPoint, CodeLocation, Debugger, FrameType::*, JsrData, SymbolType, WatchPoint, WatchType,
-};
 use crate::debugger::execute::{BugType, StopReason};
 use crate::syntax;
 use anyhow::{anyhow, bail, Result};
@@ -352,12 +350,17 @@ impl Shell {
                 let (addr, _) = self.debugger.convert_addr(&addr_str)?;
                 self.print(addr, args)?;
             }
-            Some(("enable_checks", args)) => {
-                self.debugger
-                    .enable_mem_check(*args.get_one::<bool>("memcheck").unwrap());
-                self.debugger
-                    .enable_stack_check(*args.get_one::<bool>("stackcheck").unwrap());
-            }
+            // Some(("set_traps", args)) => {
+            //     if let Some(m) = args.get_one("memcheck") {
+            //         self.debugger.enable_mem_check(*m);
+            //     }
+            //     if let Some(m) = args.get_one("stackcheck") {
+            //         self.debugger.enable_stack_check(*m);
+            //     }
+            //     if let Some(m) = args.get_one("heapcheck") {
+            //         self.debugger.enable_heap_check(*m);
+            //     }
+            // }
             Some(("expr", args)) => {
                 let expr = args.get_one::<String>("expression").unwrap();
                 let ans = self.expand_expr(expr)?;
@@ -500,11 +503,19 @@ impl Shell {
                     println!("Loaded dbginfo: {}", dbgfile.display());
                 }
 
-                println!("settings:");
+                println!("Settings:");
                 println!("  lines: {}", self.number_of_lines);
                 println!("  assembler: {}", self.force_assembler);
                 println!("  source_tree: {}", self.debugger.get_cc65_dir().display());
                 println!("  dbg suffix: {}", self.debugger.dbg_suffix);
+                println!(
+                    "  traps: {}",
+                    if self.debugger.enable_heap_check {
+                        "On"
+                    } else {
+                        "Off"
+                    }
+                );
             }
             Some(("settings", args)) => {
                 if let Some(cc65_dir) = args.get_one::<String>("source_tree") {
@@ -520,6 +531,11 @@ impl Shell {
                 }
                 if let Some(dbgsuffix) = args.get_one::<String>("dbgfile") {
                     self.debugger.set_dbgfile_suffix(dbgsuffix.as_str());
+                }
+                if let Some(t) = args.get_one("traps") {
+                    self.debugger.enable_heap_check(*t);
+                    self.debugger.enable_stack_check(*t);
+                    self.debugger.enable_mem_check(*t);
                 }
             }
 
@@ -617,13 +633,13 @@ impl Shell {
                     println!("Stack pointer mismatch");
                 }
                 BugType::Memcheck(addr) => {
-                    println!("Unitialized memory read -> {:04x}", addr);
+                    println!("Unitialized memory read -> ${:04x}", addr);
                 }
                 BugType::HeapCheck => {
                     println!("Heap check failed");
                 }
                 BugType::SegCheck(addr) => {
-                    println!("Seg write violation -> {:04x}", addr);
+                    println!("Seg read/write violation -> ${:04x}", addr);
                 }
             },
             StopReason::WatchPoint(addr) => {

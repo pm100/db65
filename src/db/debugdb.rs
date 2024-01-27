@@ -1,8 +1,8 @@
 use anyhow::{anyhow, bail, Result};
-use evalexpr::Value;
+
 //pub const NO_PARAMS:  = [];
 use crate::db::util::Extract;
-use crate::debugger::debugger::{HLSym, SegChunk, Segment, Symbol, SymbolType};
+use crate::debugger::core::{HLSym, SegChunk, Segment, Symbol, SymbolType};
 use crate::log::say;
 use rusqlite::{
     params,
@@ -34,7 +34,7 @@ pub struct SourceFile {
 }
 pub struct DebugData {
     pub conn: Connection,
-    name: String,
+
     pub cc65_dir: Option<PathBuf>,
 }
 
@@ -46,7 +46,6 @@ impl DebugData {
         let mut ret = Self {
             conn: Connection::open(name)?,
             cc65_dir: None,
-            name: name.to_string(),
         };
         ret.create_tables()?;
         Ok(ret)
@@ -115,26 +114,6 @@ impl DebugData {
             });
         }
         Ok(v)
-    }
-    pub fn load_expr_symbols(&mut self, sym_tab: &mut HashMap<String, Value>) -> Result<()> {
-        let mut stmt = self
-            .conn
-            .prepare_cached("select name, val , module from symbol")?;
-        let rows = stmt.query_map([], |row| {
-            let name = row.get::<usize, String>(0)?;
-            let val = row.get::<usize, i64>(1)? as u16;
-
-            let module = row.get::<usize, Option<String>>(2)?;
-
-            Ok((name, val, module))
-        })?;
-        sym_tab.clear();
-        for row in rows {
-            let (name, val, _module) = row?;
-            sym_tab.insert(name, Value::Int(val as i64));
-        }
-
-        Ok(())
     }
 
     pub fn get_symbol(&self, name: &str) -> Result<Vec<(String, u16, String)>> {
@@ -207,10 +186,10 @@ impl DebugData {
             let name = row[0].vto_string()?;
             // let addr = row[1].vto_i64()?;
             //  let module = row[2].vto_string()?;
-            let scope = row[1].vto_i64()?;
+            let _scope = row[1].vto_i64()?;
             let type_ = row[2].vto_string()?;
             let val = row[3].vto_i64()? as u16;
-            let seg = row[4].vto_i64()? as u8;
+            let _seg = row[4].vto_i64()? as u8;
             v.push(Symbol {
                 name,
                 value: val,
@@ -480,7 +459,7 @@ impl DebugData {
                     offset: start,
                     module: id as i32,
                     module_name: name,
-                    size: size,
+                    size,
                 });
             } else {
                 bail!("bad segid {}", segid);
@@ -572,7 +551,7 @@ impl DebugData {
             // offset integer
             let scope = row.get::<usize, i64>(0)?;
             let sc = row.get::<usize, String>(1)?;
-            let sym = row.get::<usize, i64>(2)?;
+            let _sym = row.get::<usize, i64>(2)?;
             let offset = row.get::<usize, i64>(3)?;
             Ok(HLSym {
                 name: name.to_string(),
