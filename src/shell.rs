@@ -23,11 +23,6 @@ TODO list
 assembler listing
 
 
-options
- - dis len
-  - mem len
-  - force asm
-  - .dbg alternative
 
 trace command
 log / trace in code
@@ -37,7 +32,7 @@ stack write check
 write bugcheck for locals
 clean bt output
 
-status command
+
 dedup symbols
 
 error backtrace display on and off
@@ -133,7 +128,7 @@ impl Shell {
                     }
                 }
                 Err(ReadlineError::Interrupted) => {
-                    println!("CTRL-C"); // pass on to running program?
+                    println!("");
                 }
                 Err(ReadlineError::Eof) => {
                     println!("quit"); // treat eof as quit
@@ -198,7 +193,7 @@ impl Shell {
                     );
                 }
             }
-            Some(("load_symbols", args)) => {
+            Some(("load_dbginfo", args)) => {
                 let file = args.get_one::<String>("file").unwrap();
                 self.debugger.load_dbg(Path::new(file))?;
             }
@@ -284,11 +279,16 @@ impl Shell {
             }
             Some(("back_trace", _)) => {
                 let stack = self.debugger.read_stack();
+                print!("0x{:04x} ", self.waw.absaddr);
+                if !self.print_code_line(&self.waw)? {
+                    println!("{}", self.waw.parent);
+                }
                 for i in (0..stack.len()).rev() {
                     let frame = &stack[i];
                     match &frame.frame_type {
                         Jsr(jd) => {
-                            let waw = self.debugger.where_are_we(jd.return_addr)?;
+                            let waw = self.debugger.where_are_we(jd.call_addr)?;
+                            print!("0x{:04x} ", jd.call_addr);
                             if let Some(cf) = waw.cfile {
                                 let file_name = self.debugger.lookup_file_by_id(cf).unwrap();
                                 println!(
@@ -301,15 +301,14 @@ impl Shell {
                                 // println!("0x{:04x}", addr);
 
                                 println!(
-                                    "jsr {:<10} x{:04x} 0x{:04x}",
-                                    self.debugger.symbol_lookup(jd.addr)?,
-                                    jd.return_addr,
-                                    jd.sp65
+                                    "{} \t\tjsr {} ",
+                                    waw.parent,
+                                    self.debugger.symbol_lookup(jd.dest_addr)?,
                                 );
                             }
                         }
-                        Pha(ac) => println!("pha x{:02x}", ac),
-                        Php(sr) => println!("php x{:02x}", sr),
+                        Pha(ac) => println!("pha ${:02x}", ac),
+                        Php(sr) => println!("php ${:02x}", sr),
                     }
                 }
             }
@@ -677,6 +676,7 @@ impl Shell {
                 );
             }
             _ => {
+                println!("{}", self.waw.parent);
                 // disassemble the current instruction
 
                 let mem = self.debugger.get_chunk(self.debugger.read_pc(), 3).unwrap();
@@ -700,4 +700,29 @@ impl Shell {
         };
         Ok(())
     }
+    fn print_code_line(&self, waw: &CodeLocation) -> Result<bool> {
+        if let Some(cf) = waw.cfile {
+            let file_name = self.debugger.lookup_file_by_id(cf).unwrap();
+            println!(
+                "{}:{}\t\t{}",
+                file_name.short_name,
+                waw.cline,
+                waw.ctext.as_ref().unwrap()
+            );
+            return Ok(true);
+        };
+        Ok(false)
+    }
+    // fn display_parent(&self, waw: &CodeLocation) -> Result<String> {
+    //     if let Some(parent) = &waw.parent {
+    //         let off = waw.absaddr - parent.value;
+    //         if off > 0 {
+    //             Ok(format!("{}+0x{:x}:", parent.name, off))
+    //         } else {
+    //             Ok(format!("{}", parent.name))
+    //         }
+    //     } else {
+    //         Ok(format!("0x{:04x}", waw.absaddr))
+    //     }
+    // }
 }

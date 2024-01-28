@@ -54,6 +54,7 @@ pub struct CodeLocation {
     pub offset: u16,
     pub absaddr: u16,
     pub scope: Option<i64>,
+    pub parent: String,
 }
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum SymbolType {
@@ -62,6 +63,7 @@ pub enum SymbolType {
     Label,
     CSymbol,
 }
+#[derive(Debug, Clone, Eq, PartialEq)]
 pub struct Symbol {
     pub name: String,
     pub value: u16,
@@ -129,8 +131,8 @@ pub enum SegmentType {
 }
 #[derive(Debug)]
 pub struct JsrData {
-    pub addr: u16,
-    pub return_addr: u16,
+    pub dest_addr: u16,
+    pub call_addr: u16,
     pub sp: u8,
     pub sp65: u16,
 }
@@ -175,9 +177,9 @@ impl Debugger {
             dis_line: String::new(),
             ticks: 0,
             stack_frames: Vec::new(),
-            enable_stack_check: true,
-            enable_mem_check: true,
-            enable_heap_check: true,
+            enable_stack_check: false,
+            enable_mem_check: false,
+            enable_heap_check: false,
             next_bp: None,
             load_name: String::new(),
             run_done: false,
@@ -366,6 +368,9 @@ impl Debugger {
             self.regbank_size = Some(regbanksize[0].1);
         }
         self.dbg_file = Some(file.to_path_buf());
+        self.enable_heap_check = true;
+        self.enable_mem_check = true;
+        self.enable_stack_check = true;
         Ok(())
     }
 
@@ -388,7 +393,7 @@ impl Debugger {
     pub fn load_code(&mut self, file: &Path) -> Result<(u16, u16)> {
         self.reset();
         let (sp65_addr, run, _cpu, size) = loader::load_code(file)?;
-        // println!("size={:x}, entry={:x}, cpu={}", size, run, cpu);
+
         Cpu::sp65_addr(sp65_addr);
         let arg0 = file.file_name().unwrap().to_str().unwrap().to_string();
         self.load_name = arg0;
@@ -398,9 +403,10 @@ impl Debugger {
             let prefix = prefix.to_str().unwrap();
             let mut path = file.to_path_buf();
             path.pop();
-            path.push(format!("{}.dbg", prefix));
-            say(&format!("Loading debug info from {:?}", path));
+            path.push(format!("{}{}", prefix, self.dbg_suffix));
+
             if path.exists() {
+                say(&format!("Loading debug info from {:?}", path));
                 self.load_dbg(&path)?;
             }
         }
@@ -434,7 +440,7 @@ impl Debugger {
 
         if next_inst == 0x20 {
             // if the next instruction is a jsr then]
-            // set a temp bp on the folloing inst and run
+            // set a temp bp on the following inst and run
             let inst = Cpu::read_pc() + 3;
             self.next_bp = Some(inst);
             self.execute(0)
@@ -636,6 +642,7 @@ impl Debugger {
     pub fn _find_csym(&self, name: &str, scope: i64) -> Result<Option<HLSym>> {
         self.dbgdb.find_csym(name, scope)
     }
+
     pub fn where_are_we(&self, addr: u16) -> Result<CodeLocation> {
         // given an address find out where we are
         // finds seg, module, assembly line and c line
@@ -652,6 +659,7 @@ impl Debugger {
             offset: 0,
             absaddr: addr,
             scope: None,
+            parent: String::new(),
         };
         // do we have any debug data at all?
         if self.seg_list.is_empty() {
@@ -694,6 +702,19 @@ impl Debugger {
         // find scope
         location.scope = self.dbgdb.find_scope(seg.id as i64, rel_addr)?;
 
+        // find parent symbol
+
+        location.parent = if let Some(parent) = self.find_parent_symbol(addr)? {
+            let off = parent.1;
+            if off > 0 {
+                format!("{}+0x{:x}:", parent.0, off)
+            } else {
+                format!("{}", parent.0)
+            }
+        } else {
+            format!("0x{:04x}", addr)
+        };
+
         // now find the assembly line
         if let Some(aline) = self.dbgdb.find_assembly_line(addr)? {
             location.aline = aline.line_no;
@@ -732,6 +753,24 @@ impl Debugger {
                 None
             }
         })
+    }
+    fn find_parent_symbol(&self, addr: u16) -> Result<Option<(String, u16)>> {
+        // tries to find the module + offset for a code address
+        for seg in self.seg_list.iter() {
+            if seg.start <= addr && seg.start + seg.size > addr {
+                for module in seg.modules.iter() {
+                    if module.offset + seg.start <= addr
+                        && module.offset + seg.start + module.size > addr
+                    {
+                        return Ok(Some((
+                            module.module_name.clone(),
+                            addr - module.offset - seg.start,
+                        )));
+                    }
+                }
+            }
+        }
+        Ok(None)
     }
     pub fn find_csym_address(&self, name: &str) -> Result<Option<u16>> {
         let addr = self.read_pc();

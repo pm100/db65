@@ -175,7 +175,22 @@ impl DebugData {
         }
         Ok(())
     }
-
+    pub fn find_parent_symbol(&self, addr: u16) -> Result<Option<Symbol>> {
+        let rows = self.query_db(params![addr], "select name,val,type from (select * from symdef order by val desc) where val <= ?1 limit 1;")?;
+        if rows.len() == 0 {
+            return Ok(None);
+        }
+        let row = &rows[0];
+        let name = row[0].vto_string()?;
+        let value = row[1].vto_i64()? as u16;
+        let type_ = row[2].vto_string()?;
+        Ok(Some(Symbol {
+            name,
+            value,
+            module: String::new(),
+            sym_type: Self::convert_symbol_type(&type_),
+        }))
+    }
     pub fn find_symbol_by_addr(&self, addr: u16) -> Result<Vec<Symbol>> {
         let ans = self.query_db(
             params![addr],

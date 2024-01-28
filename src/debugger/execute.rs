@@ -7,7 +7,7 @@ Its responsible for running the code . It detects
 - next/step
 - bugs
 
-It runs until it stops. It the returns a StopReason
+It runs until it stops. It then returns a StopReason
 */
 use anyhow::Result;
 #[derive(Debug, Clone)]
@@ -69,8 +69,8 @@ impl Debugger {
                     let sp65 = Cpu::read_word(sp65_addr as u16);
                     self.stack_frames.push(StackFrame {
                         frame_type: FrameType::Jsr(JsrData {
-                            addr,
-                            return_addr: pc + 3,
+                            dest_addr: addr,
+                            call_addr: pc + 3,
                             sp,
                             sp65,
                         }),
@@ -100,7 +100,7 @@ impl Debugger {
                                     break StopReason::Bug(BugType::SpMismatch);
                                 }
                             }
-                            if let Some(intercept) = self.call_intercepts.get(&jd.addr) {
+                            if let Some(intercept) = self.call_intercepts.get(&jd.dest_addr) {
                                 if let Some(stop) = intercept(self, true)? {
                                     break 'main_loop stop;
                                 }
