@@ -318,6 +318,7 @@ impl DebugData {
         let _duration = end.duration_since(start).unwrap();
         tx.commit()?;
         self.merge_csymbols(symcount)?;
+        self.load_files()?;
         Ok(())
     }
     fn merge_csymbols(&mut self, mut symcount: i64) -> Result<()> {

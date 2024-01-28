@@ -50,6 +50,7 @@ pub struct CodeLocation {
     pub ctext: Option<String>,
     pub afile: Option<i64>,
     pub aline: i64,
+    pub atext: Option<String>,
     pub seg: u8,
     pub offset: u16,
     pub absaddr: u16,
@@ -92,7 +93,7 @@ pub struct Debugger {
     pub(crate) seg_list: Vec<Segment>,
     pub(crate) heap_blocks: HashMap<u16, HeapBlock>,
     pub(crate) privileged_mode: bool,
-    pub(crate) file_table: HashMap<i64, SourceFile>,
+
     pub(crate) regbank_addr: Option<u16>,
     pub(crate) regbank_size: Option<u16>,
     pub(crate) ctrlc: Arc<AtomicBool>,
@@ -190,7 +191,6 @@ impl Debugger {
             heap_blocks: HashMap::new(),
             privileged_mode: false,
 
-            file_table: HashMap::new(),
             regbank_addr: None,
             regbank_size: None,
             ctrlc: Arc::new(AtomicBool::new(false)),
@@ -357,7 +357,7 @@ impl Debugger {
 
         self.load_intercepts()?;
         self.init_shadow()?;
-        self.dbgdb.load_files(&mut self.file_table)?;
+        //   self.dbgdb.load_files(&mut self.file_table)?;
 
         let regbank = self.dbgdb.get_symbol("zeropage.regbank")?;
         if !regbank.is_empty() {
@@ -655,6 +655,7 @@ impl Debugger {
             ctext: None,
             afile: None,
             aline: 0,
+            atext: None,
             seg: 0,
             offset: 0,
             absaddr: addr,
@@ -722,6 +723,7 @@ impl Debugger {
             location.offset = aline.addr;
             location.absaddr = addr;
             location.seg = aline.seg;
+            location.atext = Some(aline.line);
         }
 
         // now find the c line
@@ -743,16 +745,10 @@ impl Debugger {
         Ok(location)
     }
     pub fn lookup_file_by_id(&self, file_id: i64) -> Option<&SourceFile> {
-        self.file_table.get(&file_id)
+        self.dbgdb.lookup_file_by_id(file_id)
     }
     pub fn lookup_file_by_name(&self, name: &str) -> Option<&SourceFile> {
-        self.file_table.iter().find_map(|(_id, file)| {
-            if file.short_name == name {
-                Some(file)
-            } else {
-                None
-            }
-        })
+        self.dbgdb.lookup_file_by_name(name)
     }
     fn find_parent_symbol(&self, addr: u16) -> Result<Option<(String, u16)>> {
         // tries to find the module + offset for a code address

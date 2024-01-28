@@ -7,7 +7,7 @@ use crate::syntax;
 use anyhow::{anyhow, bail, Result};
 
 //use clap::error::ErrorKind;
-use clap::ArgMatches;
+use clap::{ArgMatches, FromArgMatches};
 
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
@@ -289,22 +289,32 @@ impl Shell {
                         Jsr(jd) => {
                             let waw = self.debugger.where_are_we(jd.call_addr)?;
                             print!("0x{:04x} ", jd.call_addr);
-                            if let Some(cf) = waw.cfile {
-                                let file_name = self.debugger.lookup_file_by_id(cf).unwrap();
-                                println!(
-                                    "{}:{}\t\t{}",
-                                    file_name.short_name,
-                                    waw.cline,
-                                    waw.ctext.unwrap()
-                                );
-                            } else {
-                                // println!("0x{:04x}", addr);
-
-                                println!(
-                                    "{} \t\tjsr {} ",
-                                    waw.parent,
-                                    self.debugger.symbol_lookup(jd.dest_addr)?,
-                                );
+                            match (&waw.cfile, &waw.afile) {
+                                (Some(cf), _) if !self.force_assembler => {
+                                    let file_name = self.debugger.lookup_file_by_id(*cf).unwrap();
+                                    println!(
+                                        "{}:{}\t\t{}",
+                                        file_name.short_name,
+                                        waw.cline,
+                                        waw.ctext.as_ref().unwrap()
+                                    );
+                                }
+                                (_, Some(af)) => {
+                                    let file_name = self.debugger.lookup_file_by_id(*af).unwrap();
+                                    println!(
+                                        "{}:{}\t\t{}",
+                                        file_name.short_name,
+                                        waw.aline,
+                                        waw.atext.as_ref().unwrap_or(&"".to_string())
+                                    );
+                                }
+                                _ => {
+                                    println!(
+                                        "{} \t\tjsr {} ",
+                                        waw.parent,
+                                        self.debugger.symbol_lookup(jd.dest_addr)?,
+                                    );
+                                }
                             }
                         }
                         Pha(ac) => println!("pha ${:02x}", ac),
@@ -470,7 +480,11 @@ impl Shell {
                     let (fileid, from) = if let Some(cf) = &self.waw.cfile {
                         (*cf, self.waw.cline)
                     } else {
-                        (-1, 0)
+                        if let Some(af) = &self.waw.afile {
+                            (*af, self.waw.aline)
+                        } else {
+                            (-1, -1)
+                        }
                     };
                     let source = self.debugger.get_source(
                         fileid,
@@ -665,14 +679,23 @@ impl Shell {
         let inst_addr = self.debugger.read_pc();
         self.waw = self.debugger.where_are_we(inst_addr)?;
 
-        match self.waw.cfile {
-            Some(cf) if !self.force_assembler => {
+        match (self.waw.cfile, self.waw.afile) {
+            (Some(cf), _) if !self.force_assembler => {
                 let file_name = self.debugger.lookup_file_by_id(cf).unwrap();
                 println!(
                     "{}:{}\t\t{}",
                     file_name.short_name,
                     self.waw.cline,
                     self.waw.ctext.as_ref().unwrap()
+                );
+            }
+            (_, Some(af)) => {
+                let file_name = self.debugger.lookup_file_by_id(af).unwrap();
+                println!(
+                    "{}:{}\t\t{}",
+                    file_name.short_name,
+                    self.waw.aline,
+                    self.waw.atext.as_ref().unwrap_or(&"".to_string())
                 );
             }
             _ => {

@@ -1,4 +1,5 @@
 use anyhow::{anyhow, bail, Result};
+use rusqlite::Transaction;
 
 //pub const NO_PARAMS:  = [];
 use crate::db::util::Extract;
@@ -9,6 +10,7 @@ use rusqlite::{
     types::{Null, Value as SqlValue},
     Connection,
 };
+use std::cell::Cell;
 use std::{
     collections::{BTreeMap, HashMap},
     fs::{self, File},
@@ -30,11 +32,12 @@ pub struct SourceFile {
     pub file_id: i64,
     pub short_name: String,
     pub full_path: PathBuf,
-    pub loaded: bool,
+    pub loaded: Cell<bool>,
+    pub failed: bool,
 }
 pub struct DebugData {
     pub conn: Connection,
-
+    pub(crate) file_table: HashMap<i64, SourceFile>,
     pub cc65_dir: Option<PathBuf>,
 }
 
@@ -45,6 +48,7 @@ impl DebugData {
         }
         let mut ret = Self {
             conn: Connection::open(name)?,
+            file_table: HashMap::new(),
             cc65_dir: None,
         };
         ret.create_tables()?;
@@ -79,6 +83,18 @@ impl DebugData {
                 SymbolType::Unknown
             } //SymbolType::Unknown,
         }
+    }
+    pub fn lookup_file_by_id(&self, file_id: i64) -> Option<&SourceFile> {
+        self.file_table.get(&file_id)
+    }
+    pub fn lookup_file_by_name(&self, name: &str) -> Option<&SourceFile> {
+        self.file_table.iter().find_map(|(_id, file)| {
+            if file.short_name == name {
+                Some(file)
+            } else {
+                None
+            }
+        })
     }
     pub fn get_symbols(&self, filter: Option<&String>) -> Result<Vec<Symbol>> {
         let mut v = Vec::new();
@@ -153,9 +169,11 @@ impl DebugData {
         Ok(v)
     }
 
-    pub fn load_files(&mut self, file_table: &mut HashMap<i64, SourceFile>) -> Result<()> {
+    pub fn load_files(&mut self) -> Result<()> {
         let rows = self.query_db(&[], "select name,id from file")?;
-
+        if self.cc65_dir.is_none() {
+            self.cc65_dir = self.guess_cc65_dir()?;
+        }
         for row in rows {
             let name = row[0].vto_string()?;
             let id = row[1].vto_i64()?;
@@ -165,9 +183,10 @@ impl DebugData {
                     file_id: id,
                     short_name: p.file_name().unwrap().to_str().unwrap().to_string(),
                     full_path: p.to_path_buf(),
-                    loaded: false,
+                    loaded: Cell::new(false),
+                    failed: false,
                 };
-                file_table.insert(id, sf);
+                self.file_table.insert(id, sf);
                 // println!("found file {}", p.display());
             } else {
                 say(&format!("can't find file {}", name));
@@ -227,22 +246,27 @@ impl DebugData {
             self.cc65_dir = self.guess_cc65_dir()?;
         }
         for row in rows {
-            if let SqlValue::Text(name) = &row[0] {
-                let path = Path::new(&name);
-
-                self.load_source_file(path)?;
-            }
+            let id = row[1].vto_i64()?;
+            self.load_source_file(id)?;
         }
         Ok(())
     }
 
-    pub fn load_source_file(&mut self, file: &Path) -> Result<()> {
-        println!("load source file {}", file.display());
-
-        let full_path = if let Some(p) = self.find_file(file)? {
+    pub fn load_source_file(&self, file_id: i64) -> Result<()> {
+        let path;
+        if let Some(fi) = self.file_table.get(&file_id) {
+            if fi.loaded.get() {
+                return Ok(());
+            }
+            path = fi.full_path.clone();
+        } else {
+            bail!("bad file id {}", file_id);
+        };
+        println!("load source file {}", path.display());
+        let full_path = if let Some(p) = self.find_file(&path)? {
             p
         } else {
-            say(&format!("can't find file {}", file.display()));
+            say(&format!("can't find file {}", path.display()));
             return Ok(());
         };
 
@@ -250,22 +274,22 @@ impl DebugData {
         let mut reader = BufReader::new(fd);
         let mut line = String::new();
         let mut lineno = 0;
-        let file_name = file.file_name().ok_or(anyhow!("bad file name"))?.to_str();
+        let file_name = path.file_name().ok_or(anyhow!("bad file name"))?.to_str();
 
-        let row = self
-            .conn
-            .prepare_cached("select id from file where name = ?1")?
-            .query_row(params![file.to_str().unwrap()], |row| {
-                row.get::<usize, i64>(0)
-            })?;
+        // let row = self
+        //     .conn
+        //     .prepare_cached("select id from file where name = ?1")?
+        //     .query_row(params![path.to_str().unwrap()], |row| {
+        //         row.get::<usize, i64>(0)
+        //     })?;
 
         self.conn.execute(
             "insert into source (file_id,name) values(?1, ?2)",
-            params![row, file_name],
+            params![file_id, file_name],
         )?;
         let mut map = BTreeMap::new();
-        self.get_source_file_lines(row, &mut map)?;
-        let tx = self.conn.transaction()?;
+        self.get_source_file_lines(file_id, &mut map)?;
+        let tx = Transaction::new_unchecked(&self.conn, rusqlite::TransactionBehavior::Deferred)?;
         {
             let mut stmt = tx.prepare_cached(
             "insert into source_line (file, line_no, line, seg,addr,absaddr) values(?1, ?2, ?3, ?4,?5, ?6)",
@@ -279,7 +303,7 @@ impl DebugData {
                 lineno += 1;
                 if let Some(inf) = map.get(&lineno) {
                     stmt.execute(params![
-                        row,
+                        file_id,
                         lineno,
                         line.trim_end(),
                         inf.seg,
@@ -287,11 +311,14 @@ impl DebugData {
                         inf.absaddr
                     ])?;
                 } else {
-                    stmt.execute(params![row, lineno, line.trim_end(), Null, Null, Null])?;
+                    stmt.execute(params![file_id, lineno, line.trim_end(), Null, Null, Null])?;
                 }
             }
         }
         tx.commit()?;
+        if let Some(ref mut fi) = self.file_table.get(&file_id) {
+            fi.loaded.set(true);
+        }
         Ok(())
     }
     pub fn load_all_source_files(&mut self, map: &mut BTreeMap<u16, SourceInfo>) -> Result<()> {
@@ -488,7 +515,19 @@ impl DebugData {
             from  aline, segment where segment.id = aline.seg order by absaddr desc)
             where absaddr <= ?1 limit 1";
 
-        self.internal_find_line(addr, sql)
+        let si = self.internal_find_line(addr, sql)?;
+        if si.is_none() {
+            return Ok(None);
+        }
+        let mut si = si.unwrap();
+
+        self.load_source_file(si.file_id)?;
+
+        if let Some(l) = self.get_file_line(si.file_id, si.line_no)? {
+            si.line = l;
+        }
+
+        Ok(Some(si))
     }
     fn internal_find_line(&self, addr: u16, sql: &str) -> Result<Option<SourceInfo>> {
         let mut stmt = self.conn.prepare_cached(sql)?;
