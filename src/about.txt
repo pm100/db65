@@ -7,6 +7,7 @@ watch,w         - watchpoints
 ccode,c         - working with c source code
 expressions,ex  - expression evaluator
 stop            - what happens when code execution is interrupted
+settings,set    - controlling db65 behavior
 misc            - general points about commands etc
 
 about accepts the long or short topic name ('about s' for symbols)
@@ -230,4 +231,49 @@ does a 'next chunk' operation:
  - memory, next chunk of memory
  - list source - next block of lines
  
+
+=settings,set
+
+The settings command can be used to control the behavior of db65
+
+--source_tree:
+Specifies where the cc65 libsrc tree can be found. This is the
+source code of the cc65 runtime. Do not include 'libsrc' in the path.
+
+You only need to supply this if you compiled using a compiler that 
+is not in the same tree (the linker will have included the correct paths)
+
+You can debug if this tree is not available, but you will only be able
+to do 'raw' debugging inside the runtime
+
+--lines:
+The number of lines to display for the list_source, disassemble and memory
+commands. Default is 10
+
+--source_mode:
+Specifies whether to debug using c source, assembler source or raw disassembly.
+
+By default db65 chooses the 'highest' level it can. If c source is available 
+it will debug the current module as c code. It there is no c code, either
+because there is none or becuase it cannot be found, then db65 will debug
+using assembler source. If there is no assembler available then db65
+will switch to disassembly mode.
+
+Sometimes it is useful to see 'lower' level code even if the 'higher' level
+source is available. This settings will force either 'c' , 'asm' or 'raw'
+
+--registers:
+specifies whether or not to display the current line and disassembly even
+in source level debuging mode. Default is off
+
+--dbgfile:
+The load command will look to see if there is a dbg data file with the name
+<load_file>.dbg. This command is used to specify a different suffix. 
+Include the '.'. The default is '.dbg'
+
+--traps:
+Turns the runtime error detection on or off. Default is 'on'
+
+--verbose:
+Makes db65 more chatty
 
