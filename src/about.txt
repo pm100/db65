@@ -96,7 +96,7 @@ db65 can work with c code, assembler source or raw binary.
 When it detects that it is working with c code (either from
 the loaded program or from the cc65 runtime portions in c) it
 will try to show the source rather than the assembly.
-(This can be turned off using the 'TBD' command)
+(This can be turned off using the '-set -m' command)
 
 To use c source debugging with the runtime library db65 needs
 to be able to find the 'libsrc' tree. The linker indicates the
@@ -126,15 +126,15 @@ example
 
 or
 
-    cl65 -t sim6502 -g --ld-args --dbgfile --ld-args argtest.sym argtest.c 
+    cl65 -t sim6502 -g --ld-args --dbgfile --ld-args argtest.dbg argtest.c 
 
-    note that this does not keep the intermediate .s file. db65 will complain
-    about that but it does not matter at the moment, no features use the .s files
+    note that this does not keep the intermediate .s file. You will not be able
+    to debug using the assembler file support, 'c' and 'raw' still work
 
 
 Displaying Variables:
 
-db65 does not know the size or type of variables (yet) but it does know
+db65 does not know the size or type of variables (toolchain limitation) but it does know
 their location
 
 When paused in a c stack frame the local stack variables are available.
@@ -224,8 +224,9 @@ When code is running ctrl-c will interrupt it
 
 Hex strings can be entered as 0xff, 0Xff or $ff. 
 
-Pressing enter on a blank line repeats the last command
-For several coomands repeating the last command with no arguments
+Pressing enter on a blank line repeats the last command (very usefil for 'ns', etc)
+
+For several commands repeating the last command with no arguments
 does a 'next chunk' operation:
  - dis, next set of disassembly lines
  - memory, next chunk of memory
@@ -257,10 +258,11 @@ By default db65 chooses the 'highest' level it can. If c source is available
 it will debug the current module as c code. It there is no c code, either
 because there is none or becuase it cannot be found, then db65 will debug
 using assembler source. If there is no assembler available then db65
-will switch to disassembly mode.
+will switch to disassembly ('raw') mode.
 
 Sometimes it is useful to see 'lower' level code even if the 'higher' level
-source is available. This settings will force either 'c' , 'asm' or 'raw'
+source is available. This setting will set the 'highest' level 
+either 'c' , 'asm' or 'raw'. Default 'c'
 
 --registers:
 specifies whether or not to display the current line and disassembly even

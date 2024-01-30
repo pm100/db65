@@ -28,11 +28,11 @@ stack write check
 write bugcheck for locals
 
 */
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Debug, Eq, PartialEq, PartialOrd)]
 enum SourceMode {
-    C,
-    Asm,
-    Raw,
+    C = 3,
+    Asm = 2,
+    Raw = 1,
 }
 pub struct Shell {
     debugger: Debugger,
@@ -43,6 +43,7 @@ pub struct Shell {
     number_of_lines: u8,
     source_mode: SourceMode,
     always_reg_dis: bool,
+    current_file: Option<i64>,
 }
 static VERBOSE: AtomicBool = AtomicBool::new(false);
 static SHELL_HISTORY_FILE: &str = ".db65_history";
@@ -57,6 +58,7 @@ impl Shell {
             number_of_lines: 10,
             source_mode: SourceMode::C,
             always_reg_dis: false,
+            current_file: None,
         }
     }
     fn say(s: &str, v: bool) {
@@ -225,10 +227,7 @@ impl Shell {
                 let file = args.get_one::<String>("file").unwrap();
                 self.debugger.load_code(Path::new(file))?;
             }
-            // Some(("load_source", args)) => {
-            //     let file = args.get_one::<String>("file").unwrap();
-            //     self.debugger.load_source(Path::new(file))?;
-            // }
+
             Some(("quit", _)) => {
                 println!("quit");
                 return Ok(true);
@@ -307,7 +306,7 @@ impl Shell {
                                         waw.ctext.as_ref().unwrap()
                                     );
                                 }
-                                (_, Some(af)) if self.source_mode == SourceMode::Asm => {
+                                (_, Some(af)) if self.source_mode > SourceMode::Raw => {
                                     let file_name = self.debugger.lookup_file_by_id(*af).unwrap();
                                     println!(
                                         "{}:{}\t\t{}",
@@ -325,8 +324,16 @@ impl Shell {
                                 }
                             }
                         }
-                        Pha(ac) => println!("pha ${:02x}", ac),
-                        Php(sr) => println!("php ${:02x}", sr),
+                        Pha(pd) => println!(
+                            "pha ${:02x} @{}",
+                            pd.value,
+                            self.debugger.symbol_lookup(pd.addr)?
+                        ),
+                        Php(pd) => println!(
+                            "php ${:02x} @{}",
+                            pd.value,
+                            self.debugger.symbol_lookup(pd.addr)?
+                        ),
                     }
                 }
             }
@@ -525,6 +532,11 @@ impl Shell {
                         "Off"
                     }
                 );
+                println!(
+                    "  verbose: {}",
+                    VERBOSE.load(std::sync::atomic::Ordering::SeqCst)
+                );
+                println!("  register: {}", self.always_reg_dis);
             }
             Some(("settings", args)) => {
                 if let Some(cc65_dir) = args.get_one::<PathBuf>("source_tree") {
@@ -699,7 +711,7 @@ impl Shell {
                     self.print_reg_dis(inst_addr);
                 };
             }
-            (_, Some(af)) if self.source_mode == SourceMode::Asm => {
+            (_, Some(af)) if self.source_mode > SourceMode::Raw => {
                 let file_name = self.debugger.lookup_file_by_id(af).unwrap();
                 println!(
                     "{}:{}\t\t{}",

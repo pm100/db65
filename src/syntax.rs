@@ -186,18 +186,7 @@ pub fn syntax() -> Command {
 Match is a substring, eg 'lsy main' will list all symbols containing 'main'",
                 ),
         )
-        // .subcommand(
-        //     Command::new("set_traps")
-        //         .visible_alias("en")
-        //         .arg(arg!( -m --memcheck <switch> "enable memory r/w traps")
-        //           .value_parser(clap::builder::BoolishValueParser::new()))
-        //         .arg(arg!( -h --memtrace <switch> "enable heap traps")
-        //            .value_parser(clap::builder::BoolishValueParser::new()))
-        //         .arg(arg!( -s --stackcheck <switch> "enable stack check")
-        //            .value_parser(clap::builder::BoolishValueParser::new()))
-        //         .about("set debug traps")
-        //         .help_template(APPLET_TEMPLATE),
-        // )
+
 
         .subcommand(
             Command::new("reg")

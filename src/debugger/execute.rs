@@ -35,7 +35,7 @@ use crate::{
 };
 use anyhow::anyhow;
 
-use super::core::JsrData;
+use super::core::{JsrData, PushData};
 impl Debugger {
     pub fn execute(&mut self, mut count: u16) -> Result<StopReason> {
         let counting = count > 0;
@@ -133,7 +133,11 @@ impl Debugger {
                     // pha
                     let ac = Cpu::read_ac();
                     self.stack_frames.push(StackFrame {
-                        frame_type: FrameType::Pha(ac),
+                        frame_type: FrameType::Pha(PushData {
+                            value: ac,
+                            addr: pc,
+                            sp: Cpu::read_sp(),
+                        }),
                         stop_on_pop: false,
                     });
                 }
@@ -153,7 +157,11 @@ impl Debugger {
                     // php
                     let sr = Cpu::read_sr();
                     self.stack_frames.push(StackFrame {
-                        frame_type: FrameType::Php(sr),
+                        frame_type: FrameType::Php(PushData {
+                            addr: pc,
+                            sp: Cpu::read_sp(),
+                            value: sr,
+                        }),
                         stop_on_pop: false,
                     });
                 }

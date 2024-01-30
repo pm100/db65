@@ -138,10 +138,16 @@ pub struct JsrData {
     pub sp65: u16,
 }
 #[derive(Debug)]
+pub struct PushData {
+    pub addr: u16,
+    pub sp: u8,
+    pub value: u8,
+}
+#[derive(Debug)]
 pub(crate) enum FrameType {
     Jsr(JsrData), // addr, return addr,sp,sp65
-    Pha(u8),
-    Php(u8),
+    Pha(PushData),
+    Php(PushData),
 }
 #[derive(Debug)]
 pub struct StackFrame {
@@ -468,9 +474,14 @@ impl Debugger {
             return Ok((addr_str.parse::<u16>()?, String::new()));
         }
 
-        // a c symbol?
-        if let Some(caddr) = self.find_csym_address(addr_str)? {
-            return Ok((caddr, addr_str.to_string()));
+        // a c symbol? Only meaningful when running
+        // because the c symbols we support depend on the
+        // stack frame we are in
+
+        if self.run_done {
+            if let Some(caddr) = self.find_csym_address(addr_str)? {
+                return Ok((caddr, addr_str.to_string()));
+            }
         }
 
         // a regular symbol?
@@ -682,7 +693,7 @@ impl Debugger {
                                 break;
                             }
                         }
-                        println!("sp65 {} {}", sp65, csym.value);
+
                         return Ok(Some((sp65 as i64 + csym.value) as u16));
                     }
                     "reg" => {
