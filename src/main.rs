@@ -1,9 +1,6 @@
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_lossless)]
-use crate::{
-    log::{init_log, set_say_cb},
-    shell::Shell,
-};
+use crate::{log::init_log, shell::Shell};
 use anyhow::Result;
 use clap::Parser;
 use std::path::PathBuf;
@@ -22,6 +19,7 @@ mod debugger {
     pub mod intercepts;
     pub mod loader;
     pub mod paravirt;
+    pub mod plumbing;
 }
 mod dis;
 
@@ -51,7 +49,7 @@ struct Cli {
 fn main() -> Result<()> {
     let cli = Cli::parse();
     init_log();
-    set_say_cb(|s| println!("{}", s));
+
     println!(
         "db65 sim6502 debugger {} ({})",
         built_info::PKG_VERSION,

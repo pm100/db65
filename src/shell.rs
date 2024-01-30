@@ -3,11 +3,11 @@ use crate::about::About;
 use crate::debugger::core::{CodeLocation, Debugger, FrameType::*, SymbolType, WatchType};
 use crate::debugger::cpu::Status;
 use crate::debugger::execute::{BugType, StopReason};
+
 use crate::syntax;
 use anyhow::{anyhow, bail, Result};
-
 //use clap::error::ErrorKind;
-use clap::{ArgMatches, FromArgMatches};
+use clap::ArgMatches;
 
 use rustyline::error::ReadlineError;
 use rustyline::DefaultEditor;
@@ -15,14 +15,10 @@ use std::collections::VecDeque;
 use std::fs::File;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 /*
 
 TODO list
-
-
-assembler listing
-
-
 
 trace command
 log / trace in code
@@ -30,16 +26,14 @@ dbiginfo for module
 load bin from command line
 stack write check
 write bugcheck for locals
-clean bt output
-
-
-dedup symbols
-
-error backtrace display on and off
-bt should show current frame too
-
 
 */
+#[derive(Debug, Eq, PartialEq)]
+enum SourceMode {
+    C,
+    Asm,
+    Raw,
+}
 pub struct Shell {
     debugger: Debugger,
     current_dis_addr: u16,
@@ -47,8 +41,10 @@ pub struct Shell {
     waw: CodeLocation,
     about: About,
     number_of_lines: u8,
-    force_assembler: bool,
+    source_mode: SourceMode,
+    always_reg_dis: bool,
 }
+static VERBOSE: AtomicBool = AtomicBool::new(false);
 static SHELL_HISTORY_FILE: &str = ".db65_history";
 impl Shell {
     pub fn new() -> Self {
@@ -59,12 +55,18 @@ impl Shell {
             waw: CodeLocation::default(),
             about: About::new(),
             number_of_lines: 10,
-            force_assembler: false,
+            source_mode: SourceMode::C,
+            always_reg_dis: false,
         }
+    }
+    fn say(s: &str, v: bool) {
+        if !v || v && VERBOSE.load(std::sync::atomic::Ordering::SeqCst) {
+            println!("{s}")
+        };
     }
     pub fn shell(&mut self, file: Option<PathBuf>, _args: &[String]) -> Result<u8> {
         let mut rl = DefaultEditor::new()?;
-
+        crate::log::set_say_cb(Self::say);
         if let Err(e) = rl.load_history(SHELL_HISTORY_FILE) {
             if let ReadlineError::Io(ref re) = e {
                 if re.kind() != std::io::ErrorKind::NotFound {
@@ -119,7 +121,13 @@ impl Shell {
                             if let Some(original_error) = e.downcast_ref::<clap::error::Error>() {
                                 println!("{}", original_error);
                             } else {
-                                println!("{} {}", e, e.backtrace());
+                                if e.backtrace().status()
+                                    == std::backtrace::BacktraceStatus::Captured
+                                {
+                                    println!("{} {}", e, e.backtrace());
+                                } else {
+                                    println!("{}", e);
+                                }
                             }
                         }
 
@@ -128,7 +136,7 @@ impl Shell {
                     }
                 }
                 Err(ReadlineError::Interrupted) => {
-                    println!("");
+                    println!();
                 }
                 Err(ReadlineError::Eof) => {
                     println!("quit"); // treat eof as quit
@@ -290,7 +298,7 @@ impl Shell {
                             let waw = self.debugger.where_are_we(jd.call_addr)?;
                             print!("0x{:04x} ", jd.call_addr);
                             match (&waw.cfile, &waw.afile) {
-                                (Some(cf), _) if !self.force_assembler => {
+                                (Some(cf), _) if self.source_mode == SourceMode::C => {
                                     let file_name = self.debugger.lookup_file_by_id(*cf).unwrap();
                                     println!(
                                         "{}:{}\t\t{}",
@@ -299,7 +307,7 @@ impl Shell {
                                         waw.ctext.as_ref().unwrap()
                                     );
                                 }
-                                (_, Some(af)) => {
+                                (_, Some(af)) if self.source_mode == SourceMode::Asm => {
                                     let file_name = self.debugger.lookup_file_by_id(*af).unwrap();
                                     println!(
                                         "{}:{}\t\t{}",
@@ -359,17 +367,7 @@ impl Shell {
                 let (addr, _) = self.debugger.convert_addr(&addr_str)?;
                 self.print(addr, args)?;
             }
-            // Some(("set_traps", args)) => {
-            //     if let Some(m) = args.get_one("memcheck") {
-            //         self.debugger.enable_mem_check(*m);
-            //     }
-            //     if let Some(m) = args.get_one("stackcheck") {
-            //         self.debugger.enable_stack_check(*m);
-            //     }
-            //     if let Some(m) = args.get_one("heapcheck") {
-            //         self.debugger.enable_heap_check(*m);
-            //     }
-            // }
+
             Some(("expr", args)) => {
                 let expr = args.get_one::<String>("expression").unwrap();
                 let ans = self.expand_expr(expr)?;
@@ -479,12 +477,10 @@ impl Shell {
                 } else {
                     let (fileid, from) = if let Some(cf) = &self.waw.cfile {
                         (*cf, self.waw.cline)
+                    } else if let Some(af) = &self.waw.afile {
+                        (*af, self.waw.aline)
                     } else {
-                        if let Some(af) = &self.waw.afile {
-                            (*af, self.waw.aline)
-                        } else {
-                            (-1, -1)
-                        }
+                        (-1, -1)
                     };
                     let source = self.debugger.get_source(
                         fileid,
@@ -518,7 +514,7 @@ impl Shell {
 
                 println!("Settings:");
                 println!("  lines: {}", self.number_of_lines);
-                println!("  assembler: {}", self.force_assembler);
+                println!("  source_mode: {:?}", self.source_mode);
                 println!("  source_tree: {}", self.debugger.get_cc65_dir().display());
                 println!("  dbg suffix: {}", self.debugger.dbg_suffix);
                 println!(
@@ -531,14 +527,19 @@ impl Shell {
                 );
             }
             Some(("settings", args)) => {
-                if let Some(cc65_dir) = args.get_one::<String>("source_tree") {
-                    self.debugger.set_cc65_dir(cc65_dir.as_str())?;
+                if let Some(cc65_dir) = args.get_one::<PathBuf>("source_tree") {
+                    self.debugger.set_cc65_dir(cc65_dir)?;
                 }
                 if let Some(number) = args.get_one("lines") {
                     self.number_of_lines = *number;
                 }
-                if let Some(assm) = args.get_one("assembler") {
-                    self.force_assembler = *assm;
+                if let Some(assm) = args.get_one::<String>("source_mode") {
+                    match assm.as_str() {
+                        "c" => self.source_mode = SourceMode::C,
+                        "asm" => self.source_mode = SourceMode::Asm,
+                        "raw" => self.source_mode = SourceMode::Raw,
+                        _ => unreachable!(),
+                    };
                     // forces the redisplay of state
                     self.stop(StopReason::None)?;
                 }
@@ -549,6 +550,12 @@ impl Shell {
                     self.debugger.enable_heap_check(*t);
                     self.debugger.enable_stack_check(*t);
                     self.debugger.enable_mem_check(*t);
+                }
+                if let Some(t) = args.get_one::<bool>("verbose") {
+                    VERBOSE.store(*t, std::sync::atomic::Ordering::SeqCst);
+                }
+                if let Some(t) = args.get_one::<bool>("regdis") {
+                    self.always_reg_dis = *t;
                 }
             }
 
@@ -680,7 +687,7 @@ impl Shell {
         self.waw = self.debugger.where_are_we(inst_addr)?;
 
         match (self.waw.cfile, self.waw.afile) {
-            (Some(cf), _) if !self.force_assembler => {
+            (Some(cf), _) if self.source_mode == SourceMode::C => {
                 let file_name = self.debugger.lookup_file_by_id(cf).unwrap();
                 println!(
                     "{}:{}\t\t{}",
@@ -688,8 +695,11 @@ impl Shell {
                     self.waw.cline,
                     self.waw.ctext.as_ref().unwrap()
                 );
+                if self.always_reg_dis {
+                    self.print_reg_dis(inst_addr);
+                };
             }
-            (_, Some(af)) => {
+            (_, Some(af)) if self.source_mode == SourceMode::Asm => {
                 let file_name = self.debugger.lookup_file_by_id(af).unwrap();
                 println!(
                     "{}:{}\t\t{}",
@@ -697,31 +707,36 @@ impl Shell {
                     self.waw.aline,
                     self.waw.atext.as_ref().unwrap_or(&"".to_string())
                 );
+                if self.always_reg_dis {
+                    self.print_reg_dis(inst_addr);
+                };
             }
             _ => {
                 println!("{}", self.waw.parent);
-                // disassemble the current instruction
-
-                let mem = self.debugger.get_chunk(self.debugger.read_pc(), 3).unwrap();
-                self.debugger.dis(&mem, inst_addr);
-
-                // print pc, dissasembled instruction and registers
-
-                let stat = Status::from_bits_truncate(self.debugger.read_sr());
-                println!(
-                "{:04x}:       {:<15} ac=${:02x} xr=${:02x} yr=${:02x} sp=${:02x} sr=${:02x} {:?}",
-                self.debugger.read_pc(),
-                self.debugger.dis_line,
-                self.debugger.read_ac(),
-                self.debugger.read_xr(),
-                self.debugger.read_yr(),
-                self.debugger.read_sp(),
-                stat,
-                stat
-            );
+                self.print_reg_dis(inst_addr);
             }
         };
+
         Ok(())
+    }
+    fn print_reg_dis(&mut self, inst_addr: u16) {
+        let mem = self.debugger.get_chunk(inst_addr, 3).unwrap();
+        self.debugger.dis(&mem, inst_addr);
+
+        // print pc, dissasembled instruction and registers
+        let stat = Status::from_bits_truncate(self.debugger.read_sr());
+        println!(
+        "{:04x}:       {:<15} ac=${:02x} xr=${:02x} yr=${:02x} sp=${:02x} sp65=${:04x} sr=${:02x} {:?}",
+        self.debugger.read_pc(),
+        self.debugger.dis_line,
+        self.debugger.read_ac(),
+        self.debugger.read_xr(),
+        self.debugger.read_yr(),
+        self.debugger.read_sp(),
+        self.debugger.read_sp65(),
+        stat,
+        stat
+    );
     }
     fn print_code_line(&self, waw: &CodeLocation) -> Result<bool> {
         if let Some(cf) = waw.cfile {

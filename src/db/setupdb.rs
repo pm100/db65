@@ -155,7 +155,7 @@ absaddr integer
 
         self.conn.execute(
         "create view symbol as 
-        select symdef.name as name,symdef.val as val,symdef.type as type, file.name as file, module.name as module
+        select symdef.name as name,symdef.val as val,symdef.type as type, file.name as file, module.name as module, symdef.id as symid
         from symdef
         left join line on  symdef.def = line.id
         left join file on line.file = file.id

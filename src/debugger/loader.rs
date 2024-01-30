@@ -8,7 +8,7 @@ use std::io::{BufReader, Bytes, Read};
 use std::path::Path;
 
 use crate::debugger::cpu::Cpu;
-use crate::log::say;
+use crate::say;
 
 
 static HEADER: &[u8] = &[0x73, 0x69, 0x6D, 0x36, 0x35];
@@ -52,7 +52,7 @@ pub fn load_code(file: &Path) -> Result<(u8, u16, u8, u16)> {
         count += 1;
     }
     let cpu_str = if cpu == 0 { "6502" } else { "65c02" };
-    say(&format!("Loaded {} bytes, cpu={}", count, cpu_str));
+    say!("Loaded {} bytes, cpu={}", count, cpu_str);
     Ok((sp65_addr, run, cpu, count))
 }
 fn get_u16(bytes: &mut Bytes<BufReader<File>>) -> Result<u16> {

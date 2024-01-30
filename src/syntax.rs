@@ -245,15 +245,23 @@ Match is a substring, eg 'lsy main' will list all symbols containing 'main'",
                         .value_parser(clap::value_parser!(u8).range(1..)),
                 )
                 .arg(
-                    arg!(assembler: -a --assembler <switch> "Force always assembly display ")
-                        .value_parser(clap::builder::BoolishValueParser::new()),
+                    arg!(source_mode: -m --source_mode <switch> "Source mode ")
+                    .value_parser(clap::builder::PossibleValuesParser::new(["c", "asm", "raw"])),
+                )
+                .arg(
+                    arg!(regdis: -r --registers <switch> "display registers always")
+                    .value_parser(clap::builder::BoolishValueParser::new()),
                 )
                 .arg(
                     arg!(dbgfile: -g --dbgfile_suffix <suffix> "File suffix for auto load of dbginfo files")
-                        .value_parser(clap::builder::StringValueParser::new()),
+                    .value_parser(clap::builder::StringValueParser::new()),
                 )
                 .arg(
                     arg!(traps: -t --traps <switch> "Turn traps on or off ")
+                        .value_parser(clap::builder::BoolishValueParser::new()),
+                )
+                .arg(
+                    arg!(verbose: -v --verbose <switch> "Turn verbose messages on or off ")
                         .value_parser(clap::builder::BoolishValueParser::new()),
                 )
                 .after_help("'switch' means, 'on'/'true'/'yes' or 'off'/'false'/'no'")

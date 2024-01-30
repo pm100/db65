@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 
-
-
 pub struct About {
     db: HashMap<String, String>,
     aliases: HashMap<String, String>,

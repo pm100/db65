@@ -115,7 +115,7 @@ impl ParaVirt {
         }
     }
     fn pv_close() {
-        let fd = ParaVirt::pop_arg(2);
+        let fd = ParaVirt::get_ax();
         let res = unsafe {
             if let Some(_file) = PV_FILES.get(&fd) {
                 PV_FILES.remove(&fd);

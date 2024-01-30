@@ -1,6 +1,6 @@
 use simplelog::*;
 //use std::fs::File;
-use std::{collections::LinkedList, fs::File};
+use std::{ collections::LinkedList, fs::File};
 #[macro_export]
 macro_rules! trace {
     ($fmt:literal, $($arg:expr),*) => {
@@ -22,6 +22,43 @@ macro_rules! trace {
                 log::trace!($msg);
             }
         }
+    };
+}
+
+#[macro_export]
+macro_rules! say {
+    ($fmt:literal, $($arg:expr),*) => {
+            if cfg!(test){
+                println!($fmt, $($arg),*);
+            } else {
+                crate::log::say_cb(&format!($fmt, $($arg),*), false);
+            }
+    };
+    ($msg:expr) => {
+            if cfg!(test){
+                println!($msg);
+            } else {
+                crate::log::say_cb($msg, false);
+            }
+    };
+}
+
+#[macro_export]
+macro_rules! verbose {
+    ($fmt:literal, $($arg:expr),*) => {
+            if cfg!(test){
+                println!($fmt, $($arg),*);
+            } else {
+                crate::log::say_cb(&format!($fmt, $($arg),*), true);
+            }
+
+    };
+    ($msg:expr) => {
+            if cfg!(test){
+                println!($msg);
+            } else {
+                crate::log::say_cb($msg, true);
+            }
     };
 }
 pub(crate) use trace;
@@ -72,14 +109,52 @@ impl std::io::Write for MyLog {
         Ok(())
     }
 }
+// pub trait Sayer: Sync + Send {
+//     fn say(& self, s: &str, verbose: bool);
+// }
+// struct NoSay;
+// impl Sayer for NoSay {
+//     fn say(& self, _s: &str, _verbose: bool) {}
+// }
+
+// static mut SAYER: &dyn Sayer = &NoSay;
+
+// pub fn set_sayer(cb:  &'static impl Sayer ) {
+//     unsafe { SAYER = cb };
+// }
+// pub fn say(s: &str) {
+//     unsafe { SAYER.say(s, false) };
+// }
+
+// pub fn verbose(s: &str) {
+//     unsafe{SAYER.say(s, true)};
+// }
+// use lazy_static::lazy_static;
+// use std::sync::Mutex;
+
+// type Callback = Box<dyn Fn(&str, bool) + Send + Sync>;
+
+// lazy_static! {
+//     static ref CALLBACK: Mutex<Option<Callback>> = Mutex::new(None);
+// }
+
+// pub fn register_callback(callback: Callback) {
+//     let mut global_callback = CALLBACK.lock().unwrap();
+//     *global_callback = Some(callback);
+// }
+
+// pub fn say_cb(s: &str, verbose: bool) {
+//     let callback = CALLBACK.lock().unwrap();
+//     if let Some(ref cb) = *callback {
+//         cb(s, verbose);
+//     }
+// }
 
 use once_cell::sync::OnceCell;
-
-static SAY_CB: OnceCell<fn(&str)> = OnceCell::new();
-
-pub fn set_say_cb(cb: fn(&str)) {
-    SAY_CB.set(cb).unwrap();
+static SAY_CB: OnceCell<fn(&str,bool)> = OnceCell::new();
+pub fn say_cb(s: &str, v:bool) {                                                                                               
+       SAY_CB.get().unwrap()(s,v);
 }
-pub fn say(s: &str) {
-    SAY_CB.get().unwrap()(s);
-}
+pub fn set_say_cb(cb: fn(&str,bool)) {                                                                                    
+        SAY_CB.set(cb).unwrap();                                                                                        
+    }

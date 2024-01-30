@@ -4,7 +4,7 @@ use rusqlite::Transaction;
 //pub const NO_PARAMS:  = [];
 use crate::db::util::Extract;
 use crate::debugger::core::{HLSym, SegChunk, Segment, Symbol, SymbolType};
-use crate::log::say;
+use crate::{say, verbose};
 use rusqlite::{
     params,
     types::{Null, Value as SqlValue},
@@ -178,38 +178,25 @@ impl DebugData {
             let name = row[0].vto_string()?;
             let id = row[1].vto_i64()?;
             let path = Path::new(&name);
+            let mut sf = SourceFile {
+                file_id: id,
+                short_name: path.file_name().unwrap().to_str().unwrap().to_string(),
+                full_path: PathBuf::new(),
+                loaded: Cell::new(false),
+                failed: false,
+            };
             if let Some(p) = self.find_file(path)? {
-                let sf = SourceFile {
-                    file_id: id,
-                    short_name: p.file_name().unwrap().to_str().unwrap().to_string(),
-                    full_path: p.to_path_buf(),
-                    loaded: Cell::new(false),
-                    failed: false,
-                };
-                self.file_table.insert(id, sf);
-                // println!("found file {}", p.display());
+                verbose!("found file {}", p.display());
+                sf.full_path = p;
             } else {
-                say(&format!("can't find file {}", name));
+                say!("can't find file {}", name);
+                sf.failed = true;
             }
+            self.file_table.insert(id, sf);
         }
         Ok(())
     }
-    pub fn find_parent_symbol(&self, addr: u16) -> Result<Option<Symbol>> {
-        let rows = self.query_db(params![addr], "select name,val,type from (select * from symdef order by val desc) where val <= ?1 limit 1;")?;
-        if rows.len() == 0 {
-            return Ok(None);
-        }
-        let row = &rows[0];
-        let name = row[0].vto_string()?;
-        let value = row[1].vto_i64()? as u16;
-        let type_ = row[2].vto_string()?;
-        Ok(Some(Symbol {
-            name,
-            value,
-            module: String::new(),
-            sym_type: Self::convert_symbol_type(&type_),
-        }))
-    }
+
     pub fn find_symbol_by_addr(&self, addr: u16) -> Result<Vec<Symbol>> {
         let ans = self.query_db(
             params![addr],
@@ -233,8 +220,8 @@ impl DebugData {
         }
         Ok(v)
     }
-    pub fn set_cc65_dir(&mut self, dir: &Path) -> Result<()> {
-        self.cc65_dir = Some(dir.to_path_buf());
+    pub fn set_cc65_dir(&mut self, dir: &PathBuf) -> Result<()> {
+        self.cc65_dir = Some(dir.clone());
         Ok(())
     }
     pub fn load_all_cfiles(&mut self) -> Result<()> {
@@ -258,15 +245,19 @@ impl DebugData {
             if fi.loaded.get() {
                 return Ok(());
             }
+            if fi.failed {
+                // we could not find the file, so don't try again
+                return Ok(());
+            }
             path = fi.full_path.clone();
         } else {
             bail!("bad file id {}", file_id);
         };
-        println!("load source file {}", path.display());
+        verbose!("load source file {}", path.display());
         let full_path = if let Some(p) = self.find_file(&path)? {
             p
         } else {
-            say(&format!("can't find file {}", path.display()));
+            say!("can't find file {}", path.display());
             return Ok(());
         };
 

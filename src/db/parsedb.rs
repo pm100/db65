@@ -4,9 +4,11 @@ use anyhow::{anyhow, bail, Result};
 type StringRecord = Vec<String>;
 //pub const NO_PARAMS:  = [];
 use crate::db::util::Extract;
-use crate::log::say;
+
+use crate::say;
 use crate::{db::debugdb::DebugData, debugger::core::SegmentType};
-use rusqlite::params;
+use rusqlite::{params, Transaction};
+use std::collections::HashSet;
 use std::{
     fs::File,
     io::{BufRead, BufReader},
@@ -310,18 +312,47 @@ impl DebugData {
             };
         }
 
-        say(&format!("files: {}", fcount));
-        say(&format!("modules: {}", mcount));
-        say(&format!("segments: {}", segcount));
-        say(&format!("symbols: {}", ccount + symcount));
+        say!("files: {}", fcount);
+        say!("modules: {}", mcount);
+        say!("segments: {}", segcount);
+        say!("symbols: {}", ccount + symcount);
         let end = SystemTime::now();
         let _duration = end.duration_since(start).unwrap();
         tx.commit()?;
         self.merge_csymbols(symcount)?;
+        self.dedup_symdef()?;
         self.load_files()?;
         Ok(())
     }
+
+    fn dedup_symdef(&self) -> Result<()> {
+
+        // an equ in a header file will be in the symbol table
+        // multiple times, strip  out the dups
+
+        let mut del = Vec::new();
+        let mut dedup = HashSet::new();
+        let sql = "select name,symid from symbol where module is null";
+        let rows = self.query_db(params![], sql)?;
+        for row in rows {
+            let id = row[1].vto_i64()?;
+            let name = row[0].vto_string()?;
+            if dedup.contains(&name) {
+                del.push(id);
+            } else {
+                dedup.insert(name);
+            }
+        }
+        let tx = Transaction::new_unchecked(&self.conn, rusqlite::TransactionBehavior::Deferred)?;
+        for id in del {
+            tx.execute("delete from symdef where id = ?1", params![id])?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
     fn merge_csymbols(&mut self, mut symcount: i64) -> Result<()> {
+
+        // insert static c symbols into symdef
         let sql = "select * from csymbol";
         let rows = self.query_db(params![], sql)?;
         let mut statics = Vec::new();
