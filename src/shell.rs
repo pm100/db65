@@ -43,7 +43,11 @@ pub struct Shell {
     number_of_lines: u8,
     source_mode: SourceMode,
     always_reg_dis: bool,
+<<<<<<< HEAD
     _current_file: Option<i64>,
+=======
+    //current_file: Option<i64>,
+>>>>>>> main
 }
 static VERBOSE: AtomicBool = AtomicBool::new(false);
 static SHELL_HISTORY_FILE: &str = ".db65_history";
@@ -58,7 +62,11 @@ impl Shell {
             number_of_lines: 10,
             source_mode: SourceMode::C,
             always_reg_dis: false,
+<<<<<<< HEAD
             _current_file: None,
+=======
+            //current_file: None,
+>>>>>>> main
         }
     }
     fn say(s: &str, v: bool) {
