@@ -131,6 +131,11 @@ or
     note that this does not keep the intermediate .s file. You will not be able
     to debug using the assembler file support, 'c' and 'raw' still work
 
+    you will see this error in verbose mode
+
+    "can't find file argtest.s"
+
+
 
 Displaying Variables:
 

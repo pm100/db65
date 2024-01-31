@@ -174,6 +174,7 @@ impl DebugData {
         if self.cc65_dir.is_none() {
             self.cc65_dir = self.guess_cc65_dir()?;
         }
+        let mut failed = 0;
         for row in rows {
             let name = row[0].vto_string()?;
             let id = row[1].vto_i64()?;
@@ -189,10 +190,18 @@ impl DebugData {
                 verbose!("found file {}", p.display());
                 sf.full_path = p;
             } else {
-                say!("can't find file {}", name);
+                failed += 1;
+                verbose!("can't find file {}", name);
                 sf.failed = true;
             }
             self.file_table.insert(id, sf);
+        }
+        if failed > 0 {
+            verbose!("Failed to find {} files", failed);
+            say!("Some runtime files were not found, use the 'set -s' option to set the cc65 directory");
+            say!(
+                "'set -v on' to see the list of missing files; 'about ccode' for more information"
+            );
         }
         Ok(())
     }

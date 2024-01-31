@@ -43,7 +43,7 @@ pub struct Shell {
     number_of_lines: u8,
     source_mode: SourceMode,
     always_reg_dis: bool,
-    current_file: Option<i64>,
+    _current_file: Option<i64>,
 }
 static VERBOSE: AtomicBool = AtomicBool::new(false);
 static SHELL_HISTORY_FILE: &str = ".db65_history";
@@ -58,7 +58,7 @@ impl Shell {
             number_of_lines: 10,
             source_mode: SourceMode::C,
             always_reg_dis: false,
-            current_file: None,
+            _current_file: None,
         }
     }
     fn say(s: &str, v: bool) {
@@ -405,7 +405,14 @@ impl Shell {
                 } else if *args.get_one::<bool>("address_map").unwrap() {
                     let map = self.debugger.get_addr_map();
                     for (addr, info) in map {
-                        println!("0x{:04x} {:?}", addr, info);
+                        //let waw = self.debugger.where_are_we(addr)?;
+                        let file_name = self.debugger.lookup_file_by_id(info.file_id);
+                        println!(
+                            "0x{:04x} {}:{}",
+                            addr,
+                            file_name.map_or("default", |f| &f.short_name),
+                            info.line_no
+                        );
                     }
                 }
             }
@@ -763,16 +770,4 @@ impl Shell {
         };
         Ok(false)
     }
-    // fn display_parent(&self, waw: &CodeLocation) -> Result<String> {
-    //     if let Some(parent) = &waw.parent {
-    //         let off = waw.absaddr - parent.value;
-    //         if off > 0 {
-    //             Ok(format!("{}+0x{:x}:", parent.name, off))
-    //         } else {
-    //             Ok(format!("{}", parent.name))
-    //         }
-    //     } else {
-    //         Ok(format!("0x{:04x}", waw.absaddr))
-    //     }
-    // }
 }
