@@ -14,6 +14,7 @@ use rustyline::DefaultEditor;
 use std::collections::VecDeque;
 use std::fs::File;
 use std::io::Read;
+
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 /*
@@ -43,7 +44,7 @@ pub struct Shell {
     number_of_lines: u8,
     source_mode: SourceMode,
     always_reg_dis: bool,
-    //current_file: Option<i64>,
+    current_file: Option<i64>,
 }
 static VERBOSE: AtomicBool = AtomicBool::new(false);
 static SHELL_HISTORY_FILE: &str = ".db65_history";
@@ -58,7 +59,7 @@ impl Shell {
             number_of_lines: 10,
             source_mode: SourceMode::C,
             always_reg_dis: false,
-            //current_file: None,
+            current_file: None,
         }
     }
     fn say(s: &str, v: bool) {
@@ -165,7 +166,16 @@ impl Shell {
             Some(("break", args)) => {
                 let addr = args.get_one::<String>("address").unwrap();
                 let addr = &self.expand_expr(addr)?;
-                self.debugger.set_break(addr, false)?;
+
+                if addr.chars().next().unwrap() == ':' && self.current_file.is_some() {
+                    if let Some(name) = self.debugger.lookup_file_by_id(self.current_file.unwrap())
+                    {
+                        let addr = format!("{}{}", name.short_name, addr);
+                        self.debugger.set_break(&addr, false)?;
+                    }
+                } else {
+                    self.debugger.set_break(addr, false)?;
+                }
             }
             Some(("watch", args)) => {
                 let addr = args.get_one::<String>("address").unwrap();
@@ -384,23 +394,22 @@ impl Shell {
             Some(("dbginfo", args)) => {
                 if *args.get_one::<bool>("segments").unwrap() {
                     let segs = self.debugger.get_segments();
-                    if let Some(arg) = args.get_one::<String>("arg") {
-                        if let Some(seg) = segs.iter().find(|s| s.name.as_str() == arg) {
-                            for chunk in seg.modules.iter() {
-                                println!(
-                                    "{:15} 0x{:04x} = 0x{:04x}",
-                                    chunk.module_name,
-                                    chunk.offset,
-                                    seg.start + chunk.offset
-                                );
-                            }
-                        } else {
-                            bail!("unknown segment {}", arg);
+                    for seg in segs {
+                        println!("{:15} 0x{:04x} size:{}", seg.name, seg.start, seg.size);
+                    }
+                } else if let Some(arg) = args.get_one::<String>("segment") {
+                    let segs = self.debugger.get_segments();
+                    if let Some(seg) = segs.iter().find(|s| s.name.as_str() == arg) {
+                        for chunk in seg.modules.iter() {
+                            println!(
+                                "{:15} 0x{:04x} = 0x{:04x}",
+                                chunk.module_name,
+                                chunk.offset,
+                                seg.start + chunk.offset
+                            );
                         }
                     } else {
-                        for seg in segs {
-                            println!("{:15} 0x{:04x} size:{}", seg.name, seg.start, seg.size);
-                        }
+                        bail!("unknown segment {}", arg);
                     }
                 } else if *args.get_one::<bool>("address_map").unwrap() {
                     let map = self.debugger.get_addr_map();
@@ -488,6 +497,7 @@ impl Shell {
                     for (i, s) in source.iter().enumerate() {
                         println!("{}:{}\t\t{}", filename, i + start as usize, s);
                     }
+                    self.current_file = Some(fileid.file_id);
                 } else {
                     let (fileid, from) = if let Some(cf) = &self.waw.cfile {
                         (*cf, self.waw.cline)
@@ -508,6 +518,7 @@ impl Shell {
                     for (i, s) in source.iter().enumerate() {
                         println!("{}:{}\t\t{}", file_name.short_name, i + from as usize, s);
                     }
+                    self.current_file = Some(fileid);
                 }
             }
             Some(("about", args)) => {
@@ -516,6 +527,24 @@ impl Shell {
                     println!("{}", self.about.get_topic(t.as_str()));
                 } else {
                     println!("{}", self.about.get_topic("topics"));
+                }
+            }
+            Some(("display_heap", _args)) => {
+                let heap = self.debugger.get_heap_blocks();
+                for (addr, hb) in heap {
+                    let waw = self.debugger.where_are_we(hb.alloc_addr)?;
+                    if let Some(cf) = waw.cfile {
+                        let file_name = self.debugger.lookup_file_by_id(cf).unwrap();
+                        println!(
+                            "0x{:04x} size {} allocated at 0x{:04x} = {}:{}",
+                            addr, hb.size, hb.alloc_addr, file_name.short_name, waw.cline
+                        );
+                    } else {
+                        println!(
+                            "0x{:04x} size {} allocated at 0x{:04x} ",
+                            addr, hb.size, hb.alloc_addr
+                        );
+                    }
                 }
             }
             Some(("status", _)) => {
@@ -704,7 +733,9 @@ impl Shell {
         // now display where we are
         let inst_addr = self.debugger.read_pc();
         self.waw = self.debugger.where_are_we(inst_addr)?;
-
+        if let Some(cf) = self.waw.cfile {
+            self.current_file = Some(cf);
+        }
         match (self.waw.cfile, self.waw.afile) {
             (Some(cf), _) if self.source_mode == SourceMode::C => {
                 let file_name = self.debugger.lookup_file_by_id(cf).unwrap();

@@ -129,4 +129,5 @@ impl Debugger {
         let sp65_addr = Cpu::get_sp65_addr();
         Cpu::read_word(sp65_addr as u16)
     }
+
 }

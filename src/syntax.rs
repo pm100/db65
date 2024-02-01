@@ -156,6 +156,13 @@ pub fn syntax() -> Command {
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(
+            Command::new("display_heap")
+                .visible_aliases(["heap"])
+                .about("Display heap")
+           
+                .help_template(APPLET_TEMPLATE),
+        )
+        .subcommand(
             Command::new("back_trace")
                 .alias("bt")
                 .about("Display call stack")
@@ -206,9 +213,10 @@ Match is a substring, eg 'lsy main' will list all symbols containing 'main'",
         .subcommand(
             Command::new("dbginfo")
                 .about("display various debug data")
-                .arg(arg!(-s --segments  "display segments"))
+                .arg(arg!(-s --segments "display segments"))
+                .arg(arg!(-g --segment <segment> "display specific segment"))
                 .arg(arg!(-a --address_map  "display c source address map"))
-                .arg(arg!([arg] "arg"))
+              
                 .help_template(APPLET_TEMPLATE),
         )
         .subcommand(

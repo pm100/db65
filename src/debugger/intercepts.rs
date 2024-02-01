@@ -185,6 +185,7 @@ impl Debugger {
             trace!("realloc call {} @ {:04x}", size, addr);
             if let Some(hb) = self.heap_blocks.get_mut(&addr) {
                 hb.realloc_size = Some(size);
+                hb.alloc_addr = Cpu::read_pc();
             } else {
                 // not found -> realloc of non heap block
                 if self.enable_heap_check {
