@@ -1,7 +1,9 @@
 # db65 - a debugger for cc65
 This debugger hosts sim65 cpu engine and emulates the sim65 environment. 
 
-It eads the linker generated dbgfile data
+sim65 is part of the cc65 toolset - https://github.com/cc65/cc65
+
+It reads the linker generated dbgfile data
 
 ## features
 - load cc65 toolchain debug info
