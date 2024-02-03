@@ -1,12 +1,13 @@
 use anyhow::{anyhow, bail, Result};
-//use csv::StringRecord;
 
 type StringRecord = Vec<String>;
-//pub const NO_PARAMS:  = [];
-use crate::db::util::Extract;
+use crate::debugdb::DebugData;
 
-use crate::say;
-use crate::{db::debugdb::DebugData, debugger::core::SegmentType};
+use crate::util::Extract;
+
+use crate::debugdb::SegmentType;
+use util::say;
+
 use rusqlite::{params, Transaction};
 use std::collections::HashSet;
 use std::{
@@ -326,7 +327,6 @@ impl DebugData {
     }
 
     fn dedup_symdef(&self) -> Result<()> {
-
         // an equ in a header file will be in the symbol table
         // multiple times, strip  out the dups
 
@@ -351,7 +351,6 @@ impl DebugData {
         Ok(())
     }
     fn merge_csymbols(&mut self, mut symcount: i64) -> Result<()> {
-
         // insert static c symbols into symdef
         let sql = "select * from csymbol";
         let rows = self.query_db(params![], sql)?;

@@ -8,6 +8,12 @@ the same functionality as the cli shell.
 use anyhow::{bail, Result};
 use evalexpr::Value;
 
+use crate::{
+    debugger::cpu::{Cpu, ShadowFlags},
+    debugger::execute::StopReason,
+    debugger::loader,
+};
+use dbgdata::debugdb::{DebugData, HLSym, SegChunk, Segment, SegmentType, SourceInfo, SymbolType};
 use std::cell::RefCell;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -19,27 +25,12 @@ use std::{
     io::BufReader,
     path::Path,
 };
-
-use crate::say;
-use crate::{
-    db::debugdb::{DebugData, SourceInfo},
-    debugger::cpu::{Cpu, ShadowFlags},
-    debugger::execute::StopReason,
-    debugger::loader,
-};
+use util::say;
 
 pub enum SourceDebugMode {
     None,
     Next,
     Step,
-}
-
-pub struct HLSym {
-    pub name: String,
-    pub value: i64,
-    pub type_: String,
-    pub seg: u8,
-    pub scope: i64,
 }
 
 #[derive(Debug, Default)]
@@ -57,20 +48,7 @@ pub struct CodeLocation {
     pub scope: Option<i64>,
     pub parent: String,
 }
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum SymbolType {
-    Unknown,
-    Equate,
-    Label,
-    CSymbol,
-}
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct Symbol {
-    pub name: String,
-    pub value: u16,
-    pub module: String,
-    pub sym_type: SymbolType,
-}
+
 type InterceptFunc = fn(&mut Debugger, bool) -> Result<Option<StopReason>>;
 pub struct Debugger {
     pub(crate) break_points: BTreeMap<u16, BreakPoint>,
@@ -108,28 +86,7 @@ pub struct HeapBlock {
     pub alloc_addr: u16,
     pub realloc_size: Option<u16>,
 }
-pub struct SegChunk {
-    pub offset: u16,
-    pub module: i32,
-    pub module_name: String,
-    pub size: u16,
-}
-pub struct Segment {
-    pub id: u8,       // number in db
-    pub name: String, // name in db
-    pub start: u16,   // start address
-    pub size: u16,    // end address
-    pub seg_type: u8, // type in db
-    pub modules: Vec<SegChunk>,
-}
-pub enum SegmentType {
-    Code = 0,
-    ReadOnly = 1,
-    ReadWrite = 2,
-    Zp = 3,
-    //  Bss = 4,
-    // OverWrite = 5,
-}
+
 #[derive(Debug)]
 pub struct JsrData {
     pub dest_addr: u16,

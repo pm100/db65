@@ -1,4 +1,4 @@
-use crate::db::debugdb::DebugData;
+use crate::debugdb::DebugData;
 use anyhow::Result;
 
 impl DebugData {

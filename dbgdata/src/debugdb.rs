@@ -1,10 +1,8 @@
 use anyhow::{anyhow, bail, Result};
 use rusqlite::Transaction;
+use util::{say, verbose};
 
-//pub const NO_PARAMS:  = [];
-use crate::db::util::Extract;
-use crate::debugger::core::{HLSym, SegChunk, Segment, Symbol, SymbolType};
-use crate::{say, verbose};
+use crate::util::Extract;
 use rusqlite::{
     params,
     types::{Null, Value as SqlValue},
@@ -17,6 +15,7 @@ use std::{
     io::{BufRead, BufReader},
     path::{Path, PathBuf},
 };
+
 #[derive(Debug)]
 pub struct SourceInfo {
     pub file_id: i64,
@@ -34,6 +33,49 @@ pub struct SourceFile {
     pub full_path: PathBuf,
     pub loaded: Cell<bool>,
     pub failed: bool,
+}
+pub struct HLSym {
+    pub name: String,
+    pub value: i64,
+    pub type_: String,
+    pub seg: u8,
+    pub scope: i64,
+}
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub enum SymbolType {
+    Unknown,
+    Equate,
+    Label,
+    CSymbol,
+}
+#[derive(Debug, Clone, Eq, PartialEq)]
+pub struct Symbol {
+    pub name: String,
+    pub value: u16,
+    pub module: String,
+    pub sym_type: SymbolType,
+}
+pub struct SegChunk {
+    pub offset: u16,
+    pub module: i32,
+    pub module_name: String,
+    pub size: u16,
+}
+pub struct Segment {
+    pub id: u8,       // number in db
+    pub name: String, // name in db
+    pub start: u16,   // start address
+    pub size: u16,    // end address
+    pub seg_type: u8, // type in db
+    pub modules: Vec<SegChunk>,
+}
+pub enum SegmentType {
+    Code = 0,
+    ReadOnly = 1,
+    ReadWrite = 2,
+    Zp = 3,
+    //  Bss = 4,
+    // OverWrite = 5,
 }
 pub struct DebugData {
     pub conn: Connection,
@@ -166,6 +208,7 @@ impl DebugData {
             }
             v.push((name, val, m));
         }
+
         Ok(v)
     }
 
