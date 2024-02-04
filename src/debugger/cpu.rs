@@ -18,9 +18,9 @@
 
 */
 use crate::debugger::paravirt::ParaVirt;
-use crate::log::trace;
 use bitflags::bitflags;
 use std::{fmt, os::raw::c_char};
+use util::trace;
 
 // the one cpu instance
 // this is because the calls to us are 'naked' c calls

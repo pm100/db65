@@ -8,10 +8,10 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use crate::db::debugdb::{SourceFile, SourceInfo};
+use dbgdata::debugdb::{Segment, SourceFile, SourceInfo, Symbol};
 
 use super::{
-    core::{BreakPoint, Debugger, HeapBlock, Segment, StackFrame, Symbol, WatchPoint},
+    core::{BreakPoint, Debugger, HeapBlock, StackFrame, WatchPoint},
     cpu::Cpu,
 };
 use anyhow::{bail, Result};
@@ -129,5 +129,4 @@ impl Debugger {
         let sp65_addr = Cpu::get_sp65_addr();
         Cpu::read_word(sp65_addr as u16)
     }
-
 }

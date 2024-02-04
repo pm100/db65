@@ -1,17 +1,18 @@
 #![allow(clippy::cast_possible_truncation)]
 #![allow(clippy::cast_lossless)]
-use crate::{log::init_log, shell::Shell};
+use crate::shell::Shell;
 use anyhow::Result;
 use clap::Parser;
 use std::path::PathBuf;
+use util::log::init_log;
 
-mod log;
-mod db {
-    pub mod debugdb;
-    pub mod parsedb;
-    pub mod setupdb;
-    pub mod util;
-}
+//mod log;
+// mod db {
+//     pub mod debugdb;
+//     pub mod parsedb;
+//     pub mod setupdb;
+//     pub mod util;
+// }
 mod debugger {
     pub mod core;
     pub mod cpu;

@@ -1,11 +1,11 @@
-use crate::{debugger::core::Debugger, debugger::cpu::Cpu, trace};
-use anyhow::{bail, Result};
-
 use super::{
     core::HeapBlock,
     cpu::ShadowFlags,
     execute::{BugType, StopReason},
 };
+use crate::{debugger::core::Debugger, debugger::cpu::Cpu};
+use anyhow::{bail, Result};
+use util::trace;
 
 impl Debugger {
     /*

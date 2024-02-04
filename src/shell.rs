@@ -1,8 +1,9 @@
 #![allow(clippy::uninlined_format_args)]
 use crate::about::About;
-use crate::debugger::core::{CodeLocation, Debugger, FrameType::*, SymbolType, WatchType};
+use crate::debugger::core::{CodeLocation, Debugger, FrameType::*, WatchType};
 use crate::debugger::cpu::Status;
 use crate::debugger::execute::{BugType, StopReason};
+use dbgdata::debugdb::SymbolType;
 
 use crate::syntax;
 use anyhow::{anyhow, bail, Result};
@@ -69,7 +70,7 @@ impl Shell {
     }
     pub fn shell(&mut self, file: Option<PathBuf>, _args: &[String]) -> Result<u8> {
         let mut rl = DefaultEditor::new()?;
-        crate::log::set_say_cb(Self::say);
+        util::say::set_say_cb(Self::say);
         if let Err(e) = rl.load_history(SHELL_HISTORY_FILE) {
             if let ReadlineError::Io(ref re) = e {
                 if re.kind() != std::io::ErrorKind::NotFound {
